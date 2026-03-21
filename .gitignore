@@ -1,0 +1,26 @@
+# Environment
+.env
+.env.local
+
+# Node
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build outputs
+frontend/dist/
+coverage/
+
+# Data
+/data/sqlite/*.db
+/data/backups/*
+!/data/backups/.gitkeep
+/data/uploads/*
+!/data/uploads/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
