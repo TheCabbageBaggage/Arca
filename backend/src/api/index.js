@@ -5,6 +5,8 @@ const llmRoutes = require('./llm.routes');
 const contactsRoutes = require('./contacts.routes');
 const documentsRoutes = require('./documents.routes');
 const financeRoutes = require('./finance.routes');
+const projectsRoutes = require('./projects.routes');
+const tokensRoutes = require('./tokens.routes');
 
 const router = express.Router();
 
@@ -14,5 +16,7 @@ router.use('/llm', llmRoutes);
 router.use('/contacts', contactsRoutes);
 router.use('/documents', documentsRoutes);
 router.use('/', financeRoutes);
+router.use('/', projectsRoutes);
+router.use('/', tokensRoutes);
 
 module.exports = router;
