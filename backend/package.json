@@ -9,6 +9,8 @@
     "start": "node src/server.js",
     "db:migrate": "node src/db/migrate.js",
     "db:migration:status": "node src/db/migration-status.js",
+    "audit:verify-system-log": "node src/modules/audit/cli.js verify-system-log",
+    "audit:verify": "node src/modules/audit/cli.js verify",
     "test": "node --test src/__tests__"
   },
   "dependencies": {
