@@ -81,16 +81,27 @@ async function listTasks(req, res, next) {
   }
 }
 
+async function approveTask(req, res, next) {
+  try {
+    const task = agentTaskService.approveTask(req.params.id, req.body || {}, req.user || req.auth?.user || null);
+    res.status(200).json(task);
+  } catch (error) {
+    next(error);
+  }
+}
+
 router.post('/tasks', authenticate, requireScopes('agents:write'), createStructuredTask);
 router.post('/nl', authenticate, requireScopes('agents:write'), createNaturalLanguageTask);
 router.get('/tasks', authenticate, requireScopes('agents:read'), listTasks);
 router.get('/tasks/:id', authenticate, requireScopes('agents:read'), getTask);
+router.post('/tasks/:id/approve', authenticate, requireScopes('agents:write'), approveTask);
 
 router.handlers = {
   createStructuredTask,
   createNaturalLanguageTask,
   getTask,
-  listTasks
+  listTasks,
+  approveTask
 };
 
 module.exports = router;

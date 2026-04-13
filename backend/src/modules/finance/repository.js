@@ -146,6 +146,35 @@ class FinanceRepository {
     return db.prepare('SELECT * FROM accounting_periods WHERE period = ? LIMIT 1').get(period) || null;
   }
 
+  getApplicableSpendApprovalRule(scope, amountUsd) {
+    const db = this.ensure();
+    const normalizedScope = String(scope || '*');
+    const normalizedAmount = toNumber(amountUsd, 0);
+    const row = db.prepare(
+      `SELECT *
+         FROM spend_approval_rules
+        WHERE threshold_usd <= ?
+          AND (scope = ? OR scope = '*')
+        ORDER BY CASE WHEN scope = ? THEN 0 ELSE 1 END, threshold_usd DESC, id ASC
+        LIMIT 1`
+    ).get(normalizedAmount, normalizedScope, normalizedScope);
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      threshold_usd: toNumber(row.threshold_usd, 0),
+      approver_key_id: row.approver_key_id,
+      scope: row.scope,
+      auto_approve_usd: row.auto_approve_usd === null ? null : toNumber(row.auto_approve_usd, 0),
+      notify_human_usd: row.notify_human_usd === null ? null : toNumber(row.notify_human_usd, 0),
+      created_at: row.created_at,
+      updated_at: row.updated_at
+    };
+  }
+
   ensurePeriodOpen(period) {
     const row = this.getAccountingPeriod(period);
     if (row && (row.is_locked === 1 || row.is_locked === true)) {

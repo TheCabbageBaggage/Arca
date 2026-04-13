@@ -23,6 +23,9 @@ async function createM5Harness() {
   const { openDatabase, closeDatabase } = require('../../db/client');
   const { financeService } = require('../../modules/finance');
   const { verifyChain } = require('../../modules/audit');
+  const { agentTaskService } = require('../../modules/agents');
+  const financeRoutes = require('../../api/finance.routes');
+  const agentsRoutes = require('../../api/agents.routes');
 
   migrate();
 
@@ -73,6 +76,59 @@ async function createM5Harness() {
     );
   }
 
+  function createResponse() {
+    return {
+      statusCode: 200,
+      body: undefined,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.body = payload;
+        return this;
+      },
+      send(payload) {
+        this.body = payload;
+        return this;
+      }
+    };
+  }
+
+  async function invoke(handler, req = {}) {
+    const res = createResponse();
+    let nextError = null;
+
+    try {
+      await handler(req, res, (error) => {
+        nextError = error || null;
+      });
+    } catch (error) {
+      nextError = error;
+    }
+
+    return {
+      error: nextError,
+      res
+    };
+  }
+
+  async function waitForTask(taskId, targetStatus = 'done', timeoutMs = 2000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const task = agentTaskService.getTask(taskId);
+      if (task && task.status === targetStatus) {
+        return task;
+      }
+      if (task && task.status === 'failed' && targetStatus !== 'failed') {
+        return task;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    throw new Error(`Task ${taskId} did not reach ${targetStatus}`);
+  }
+
   async function close() {
     closeDatabase();
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -82,6 +138,10 @@ async function createM5Harness() {
     db,
     financeService,
     verifyChain,
+    financeRoutes,
+    agentsRoutes,
+    invoke,
+    waitForTask,
     getContactId,
     insertBrokenTransactionRow,
     close

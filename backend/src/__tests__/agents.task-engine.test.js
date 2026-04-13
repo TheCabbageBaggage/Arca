@@ -59,3 +59,70 @@ test('agent routes surface 404 for missing tasks', async () => {
     await harness.close();
   }
 });
+
+test('approval flow resumes waiting tasks when approved', async () => {
+  const harness = await createAgentsHarness();
+
+  try {
+    const actor = { id: 'ak_cfo_01', keyId: 'ak_cfo_01', name: 'CFO Agent', authType: 'agent_key' };
+    const created = harness.service.createTask({
+      task_type: 'finance_posting',
+      instruction: 'Post supplier payment #20034',
+      approval_required: true,
+      approval_scope: 'finance:write',
+      approval_amount_usd: 1250,
+      approval_reason: 'Invoice V-20034'
+    }, actor);
+
+    assert.equal(created.status, 'waiting_approval');
+
+    const approved = harness.service.approveTask(created.task_id, { approved: true, reason: 'Verified against PO' }, actor);
+    assert.equal(approved.status, 'queued');
+    assert.equal(approved.approved_by, 'ak_cfo_01');
+    assert.ok(approved.approved_at);
+
+    const completed = await harness.waitForTask(created.task_id, 'done');
+    assert.equal(completed.status, 'done');
+  } finally {
+    await harness.close();
+  }
+});
+
+test('approval flow cancels task when rejected', async () => {
+  const harness = await createAgentsHarness();
+
+  try {
+    const actor = { id: 'ak_cfo_01', keyId: 'ak_cfo_01', name: 'CFO Agent', authType: 'agent_key' };
+    const created = harness.service.createTask({
+      task_type: 'finance_posting',
+      instruction: 'Post supplier payment #20035',
+      approval_required: true
+    }, actor);
+
+    assert.equal(created.status, 'waiting_approval');
+
+    const rejected = harness.service.approveTask(created.task_id, { approved: false, reason: 'Missing supporting doc' }, actor);
+    assert.equal(rejected.status, 'cancelled');
+    assert.match(rejected.error_message, /Approval rejected/);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('approve route surfaces 404 for missing tasks', async () => {
+  const harness = await createAgentsHarness();
+
+  try {
+    const result = await harness.invoke(harness.agentsRoutes.handlers.approveTask, {
+      params: { id: 'task_missing' },
+      body: { approved: true },
+      user: { id: 'ak_cfo_01', keyId: 'ak_cfo_01', authType: 'agent_key' },
+      auth: { user: { id: 'ak_cfo_01', keyId: 'ak_cfo_01', authType: 'agent_key' } }
+    });
+
+    assert.equal(result.error.statusCode, 404);
+    assert.equal(result.error.message, 'Task not found');
+  } finally {
+    await harness.close();
+  }
+});

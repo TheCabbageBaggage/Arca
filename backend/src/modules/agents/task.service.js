@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const AgentsRepository = require('./repository');
 const LLMAdapter = require('./llm-adapter');
+const { financeService } = require('../finance');
+const { publishEvent } = require('../../realtime/bus');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -14,17 +16,38 @@ class AgentTaskService {
   }
 
   createTask(payload, actor = null) {
+    const approvalRequired = Boolean(payload.approval_required || payload.approvalRequired || payload.await_approval || payload.awaitApproval);
+    const approval = approvalRequired
+      ? {
+          required: true,
+          scope: payload.approval_scope || payload.approvalScope || 'finance:write',
+          amount_usd: payload.approval_amount_usd || payload.approvalAmountUsd || null,
+          reason: payload.approval_reason || payload.approvalReason || null
+        }
+      : null;
+
     const task = this.repository.createTask({
       taskType: payload.task_type || payload.taskType || 'general',
       instruction: payload.instruction,
       contextJson: JSON.stringify(payload.context || {}),
       llmOverrideJson: payload.llm_override ? JSON.stringify(payload.llm_override) : null,
+      approvalJson: approval ? JSON.stringify(approval) : null,
+      status: approvalRequired ? 'waiting_approval' : 'queued',
       createdByType: actor?.authType || actor?.type || 'system',
       createdById: actor?.id ? String(actor.id) : null,
       createdByName: actor?.name || actor?.username || 'system'
     });
 
-    this.schedule(task.task_id);
+    publishEvent('agent.task.created', {
+      task_id: task.task_id,
+      status: task.status,
+      task_type: task.task_type,
+      created_by: task.created_by
+    });
+
+    if (!approvalRequired) {
+      this.schedule(task.task_id);
+    }
     return task;
   }
 
@@ -43,6 +66,64 @@ class AgentTaskService {
 
   listTasks(filters = {}) {
     return this.repository.listTasks(filters);
+  }
+
+  approveTask(taskId, payload = {}, actor = null) {
+    const task = this.repository.getTaskById(taskId);
+    if (!task) {
+      const error = new Error('Task not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (task.status !== 'waiting_approval') {
+      const error = new Error('Task is not waiting for approval');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    if (typeof payload.approved !== 'boolean') {
+      const error = new Error('approved must be a boolean');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const approvedBy = actor?.keyId || actor?.id || actor?.username || actor?.name || 'unknown';
+    const approvedAt = new Date().toISOString();
+
+    if (!payload.approved) {
+      const rejected = this.repository.updateTask(taskId, {
+        status: 'cancelled',
+        approved_by: String(approvedBy),
+        approved_at: approvedAt,
+        error_message: payload.reason ? `Approval rejected: ${payload.reason}` : 'Approval rejected',
+        updated_at: approvedAt
+      });
+      publishEvent('agent.task.approval.rejected', {
+        task_id: taskId,
+        status: rejected.status,
+        approved_by: rejected.approved_by,
+        reason: payload.reason || null
+      });
+      return rejected;
+    }
+
+    const updated = this.repository.updateTask(taskId, {
+      status: 'queued',
+      approved_by: String(approvedBy),
+      approved_at: approvedAt,
+      updated_at: approvedAt
+    });
+
+    publishEvent('agent.task.approval.approved', {
+      task_id: taskId,
+      status: updated.status,
+      approved_by: updated.approved_by,
+      approved_at: updated.approved_at
+    });
+
+    this.schedule(taskId);
+    return updated;
   }
 
   listProviders() {
@@ -117,19 +198,52 @@ class AgentTaskService {
       return null;
     }
 
+    if (task.status === 'waiting_approval') {
+      return task;
+    }
+
     if (task.status !== 'queued') {
       return task;
     }
 
-    this.repository.updateTask(taskId, {
+    const running = this.repository.updateTask(taskId, {
       status: 'running',
       started_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
+    });
+    publishEvent('agent.task.updated', {
+      task_id: taskId,
+      status: running.status,
+      task_type: running.task_type
     });
 
     await sleep(10);
 
     try {
+      const actionResult = this.executePendingAction(task);
+      if (actionResult) {
+        const now = new Date().toISOString();
+        const completed = this.repository.updateTask(taskId, {
+          status: 'done',
+          provider: 'internal',
+          model: 'finance-engine',
+          result_json: JSON.stringify(actionResult),
+          input_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+          cost_usd: 0,
+          finished_at: now,
+          updated_at: now
+        });
+        publishEvent('agent.task.updated', {
+          task_id: taskId,
+          status: completed.status,
+          task_type: completed.task_type,
+          provider: completed.provider
+        });
+        return completed;
+      }
+
       const override = task.llm_override || {};
       const prompt = this.buildPrompt(task);
       const startedAt = Date.now();
@@ -160,7 +274,7 @@ class AgentTaskService {
         cost_usd: completion.cost_usd
       };
 
-      return this.repository.updateTask(taskId, {
+      const completed = this.repository.updateTask(taskId, {
         status: 'done',
         provider: completion.provider,
         model: completion.model,
@@ -172,15 +286,75 @@ class AgentTaskService {
         finished_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
+      publishEvent('agent.task.updated', {
+        task_id: taskId,
+        status: completed.status,
+        task_type: completed.task_type,
+        provider: completed.provider
+      });
+      return completed;
     } catch (error) {
-      return this.repository.updateTask(taskId, {
+      const failed = this.repository.updateTask(taskId, {
         status: 'failed',
         error_message: error.message,
         error_code: error.statusCode ? String(error.statusCode) : 'TASK_FAILED',
         finished_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
+      publishEvent('agent.task.updated', {
+        task_id: taskId,
+        status: failed.status,
+        task_type: failed.task_type,
+        error: failed.error_message
+      });
+      return failed;
     }
+  }
+
+  executePendingAction(task) {
+    const action = task?.context?.pending_action;
+    if (!action || action.module !== 'finance') {
+      return null;
+    }
+
+    const actor = {
+      ...(task.context?.actor || {}),
+      approvalGranted: true
+    };
+
+    if (action.action === 'create_invoice') {
+      const invoice = financeService.createInvoice(action.payload || {}, actor);
+      return {
+        type: 'pending_action',
+        module: 'finance',
+        action: action.action,
+        result: { invoice }
+      };
+    }
+
+    if (action.action === 'create_payment') {
+      const payment = financeService.createPayment(action.payload || {}, actor);
+      return {
+        type: 'pending_action',
+        module: 'finance',
+        action: action.action,
+        result: { payment }
+      };
+    }
+
+    if (action.action === 'create_journal_entry') {
+      const journal_entry = financeService.createJournalEntry(action.payload || {}, actor);
+      return {
+        type: 'pending_action',
+        module: 'finance',
+        action: action.action,
+        result: { journal_entry }
+      };
+    }
+
+    const error = new Error(`Unsupported pending action: ${action.action}`);
+    error.statusCode = 400;
+    throw error;
   }
 
   buildPrompt(task) {

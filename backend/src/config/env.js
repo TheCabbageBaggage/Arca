@@ -1,9 +1,11 @@
 const path = require('path');
 
+const defaultDatabasePath = path.resolve(__dirname, '..', '..', '..', 'data', 'sqlite', 'arca.db');
+
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 3000),
-  databasePath: process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'sqlite', 'arca.db'),
+  databasePath: process.env.DATABASE_PATH || defaultDatabasePath,
   corsOrigin: process.env.CORS_ORIGIN || '*',
   jwtSecret: process.env.JWT_SECRET || 'dev-jwt-secret-change-me',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',

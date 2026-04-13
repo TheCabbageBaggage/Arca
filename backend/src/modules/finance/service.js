@@ -22,6 +22,41 @@ class FinanceService {
     this.repository = repository;
   }
 
+  enforceSpendApproval(scope, amountUsd, actor, operation) {
+    if (actor?.approvalGranted === true) {
+      return;
+    }
+
+    const isAgentKey = Boolean(actor?.keyId || actor?.authType === 'agent_key' || actor?.type === 'agent_key');
+    if (!isAgentKey) {
+      return;
+    }
+
+    const amount = toNumber(amountUsd, 0);
+    const rule = this.repository.getApplicableSpendApprovalRule(scope, amount);
+    if (!rule) {
+      return;
+    }
+
+    const autoApprove = rule.auto_approve_usd;
+    if (autoApprove !== null && amount <= autoApprove) {
+      return;
+    }
+
+    const error = new Error('Spend approval required before posting this booking');
+    error.statusCode = 409;
+    error.code = 'SPEND_APPROVAL_REQUIRED';
+    error.approval = {
+      operation,
+      scope,
+      amount_usd: amount,
+      rule_id: rule.id,
+      approver_key_id: rule.approver_key_id,
+      notify_human: rule.notify_human_usd !== null ? amount >= rule.notify_human_usd : false
+    };
+    throw error;
+  }
+
   listInvoices(filters = {}) {
     return this.repository.listInvoices(filters);
   }
@@ -58,6 +93,8 @@ class FinanceService {
       error.statusCode = 400;
       throw error;
     }
+
+    this.enforceSpendApproval('finance:write', totalGross, actor, 'create_invoice');
 
     return this.repository.createInvoice({
       invoice_no: payload.invoice_no || payload.invoiceNo,
@@ -107,6 +144,8 @@ class FinanceService {
     const totalAmount = toNumber(payload.total_amount ?? payload.totalAmount ?? payload.amount_gross ?? payload.amountGross ?? payload.amount, 0);
     const createdBy = actorOrSystem(actor);
 
+    this.enforceSpendApproval('finance:write', totalAmount, actor, 'create_payment');
+
     return this.repository.createPayment({
       payment_no: payload.payment_no || payload.paymentNo,
       contact_id: contactId,
@@ -134,6 +173,11 @@ class FinanceService {
     const bookingPeriod = normalizePeriod(payload.booking_period || payload.bookingPeriod) || periodFromDate(entryDate);
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     const createdBy = actorOrSystem(actor);
+    const totalDebit = lines
+      .filter((line) => line && line.side === 'debit')
+      .reduce((sum, line) => sum + toNumber(line.amount, 0), 0);
+
+    this.enforceSpendApproval('finance:write', totalDebit, actor, 'create_journal_entry');
 
     return this.repository.createJournalEntry({
       entry_no: payload.entry_no || payload.entryNo,

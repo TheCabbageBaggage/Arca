@@ -30,15 +30,17 @@ class AgentsRepository {
         provider_name, model, result_payload, error_text, input_tokens,
         output_tokens, total_tokens, cost_usd, created_by_type, created_by_id,
         created_by_name, created_at, updated_at
-      ) VALUES (?, ?, ?, 'queued', ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, ?, ?, ?, ?, ?)`
     ).run(
       taskId,
       task.agentType || 'generic',
       task.taskType,
+      task.status || 'queued',
       task.instruction,
       JSON.stringify({
         context: parseJson(task.contextJson, {}),
-        llm_override: parseJson(task.llmOverrideJson, null)
+        llm_override: parseJson(task.llmOverrideJson, null),
+        approval: parseJson(task.approvalJson, null)
       }),
       task.createdByType || null,
       task.createdById || null,
@@ -61,6 +63,8 @@ class AgentsRepository {
       model: 'model',
       result_json: 'result_payload',
       error_message: 'error_text',
+      approved_by: 'approved_by',
+      approved_at: 'approved_at',
       input_tokens: 'input_tokens',
       output_tokens: 'output_tokens',
       total_tokens: 'total_tokens',
@@ -172,19 +176,24 @@ class AgentsRepository {
   }
 
   mapTask(row) {
+    const requestPayload = parseJson(row.request_payload, {});
+
     return {
       id: row.id,
       task_id: row.task_id,
       task_type: row.task_type,
       instruction: row.instruction,
-      context: parseJson(row.request_payload, {}).context || {},
-      llm_override: parseJson(row.request_payload, {}).llm_override || null,
+      context: requestPayload.context || {},
+      llm_override: requestPayload.llm_override || null,
+      approval: requestPayload.approval || null,
       status: row.status,
       provider: row.provider_name,
       model: row.model,
       result: parseJson(row.result_payload, null),
       error_message: row.error_text,
       error_code: null,
+      approved_by: row.approved_by || null,
+      approved_at: row.approved_at || null,
       input_tokens: row.input_tokens,
       output_tokens: row.output_tokens,
       total_tokens: row.total_tokens,

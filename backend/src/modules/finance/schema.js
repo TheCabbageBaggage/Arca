@@ -9,7 +9,16 @@ function hasTable(db, name) {
 
 function ensureFinanceSchema() {
   const db = openDatabase();
-  const requiredTables = ['contacts', 'transaction_log', 'system_log', 'invoices', 'payments', 'journal_entries', 'accounting_periods'];
+  const requiredTables = [
+    'contacts',
+    'transaction_log',
+    'system_log',
+    'invoices',
+    'payments',
+    'journal_entries',
+    'accounting_periods',
+    'spend_approval_rules'
+  ];
   const missing = requiredTables.filter((name) => !hasTable(db, name));
 
   if (missing.length > 0) {
