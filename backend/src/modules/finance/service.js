@@ -61,6 +61,14 @@ class FinanceService {
     return this.repository.listInvoices(filters);
   }
 
+  listPayments(filters = {}) {
+    return this.repository.listPayments(filters);
+  }
+
+  listJournalEntries(filters = {}) {
+    return this.repository.listJournalEntries(filters);
+  }
+
   createInvoice(payload = {}, actor = null) {
     requireField(payload.contact_id || payload.contactId, 'contact_id is required');
     const contactId = Number(payload.contact_id || payload.contactId);

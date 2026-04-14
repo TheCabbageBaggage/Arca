@@ -1,4 +1,4 @@
-import LoginForm from ./components/LoginForm.jsx;
+import LoginForm from './components/LoginForm.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
@@ -256,7 +256,8 @@ export default function App() {
   const [tasksState, setTasksState] = useState({
     items: [],
     loading: false,
-    error: null
+    error: null,
+    filter: "all"
   });
 
   const [contactsState, setContactsState] = useState({
@@ -269,6 +270,9 @@ export default function App() {
 
   const [financeState, setFinanceState] = useState({
     invoices: [],
+    payments: [],
+    journalEntries: [],
+    reports: { pl: null, vat: null, openAr: null },
     loading: false,
     error: null
   });
@@ -297,6 +301,19 @@ export default function App() {
     selectedRecordId: ''
   });
   const [documentForm, setDocumentForm] = useState(initialDocumentForm);
+
+  const [approvalRulesState, setApprovalRulesState] = useState({
+    items: [],
+    loading: false,
+    error: null
+  });
+  const [approvalRuleForm, setApprovalRuleForm] = useState({
+    threshold_usd: "",
+    scope: "finance:write",
+    approver_key_id: "",
+    auto_approve_usd: "",
+    notify_human_usd: ""
+  });
 
   const canUseApi = token.trim().length > 0;
 
@@ -395,21 +412,48 @@ export default function App() {
     }
   }
 
-  async function loadInvoices(silent = false) {
-    if (!canUseApi) return [];
+  async function loadFinanceData(silent = false) {
+    if (!canUseApi) return { invoices: [], payments: [], journalEntries: [] };
 
     setFinanceState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const payload = await request('/api/v1/invoices');
-      const invoices = payload.invoices || [];
-      setFinanceState((current) => ({ ...current, invoices, loading: false, error: null }));
-      if (!silent) notify('success', 'Invoices loaded', `${invoices.length} record(s)`);
-      return invoices;
+      const [invoicePayload, paymentPayload, journalPayload, plPayload, vatPayload, openArPayload] = await Promise.all([
+        request('/api/v1/invoices'),
+        request('/api/v1/payments'),
+        request('/api/v1/journal-entries'),
+        request('/api/v1/reports/pl'),
+        request('/api/v1/reports/vat'),
+        request('/api/v1/reports/open-ar')
+      ]);
+
+      const invoices = invoicePayload.invoices || [];
+      const payments = paymentPayload.payments || [];
+      const journalEntries = journalPayload.journal_entries || [];
+
+      setFinanceState((current) => ({
+        ...current,
+        invoices,
+        payments,
+        journalEntries,
+        reports: {
+          pl: plPayload.report || null,
+          vat: vatPayload.report || null,
+          openAr: openArPayload.report || null
+        },
+        loading: false,
+        error: null
+      }));
+
+      if (!silent) {
+        notify('success', 'Finance loaded', `${invoices.length} invoices, ${payments.length} payments, ${journalEntries.length} journal entries`);
+      }
+
+      return { invoices, payments, journalEntries };
     } catch (error) {
       const message = normalizeError(error);
       setFinanceState((current) => ({ ...current, loading: false, error: message }));
-      if (!silent) notify('error', 'Invoices failed', message);
-      return [];
+      if (!silent) notify('error', 'Finance load failed', message);
+      return { invoices: [], payments: [], journalEntries: [] };
     }
   }
 
@@ -516,7 +560,7 @@ export default function App() {
 
     await Promise.all([
       loadContacts(true),
-      loadInvoices(true),
+      loadFinanceData(true),
       loadProjects(true),
       loadTasks(true)
     ]);
@@ -599,7 +643,7 @@ export default function App() {
       } else {
         const invoice = result.invoice;
         notify('success', 'Invoice created', invoice?.invoice_no || 'Posted');
-        await loadInvoices(true);
+        await loadFinanceData(true);
         await loadDashboard(true);
       }
 
@@ -643,7 +687,7 @@ export default function App() {
         await loadTasks(true);
       } else {
         notify('success', 'Payment posted', result?.payment?.payment_no || 'Done');
-        await loadInvoices(true);
+        await loadFinanceData(true);
         await loadDashboard(true);
       }
 
@@ -695,7 +739,7 @@ export default function App() {
         await loadTasks(true);
       } else {
         notify('success', 'Journal created', result?.journal_entry?.entry_no || 'Posted');
-        await loadInvoices(true);
+        await loadFinanceData(true);
         await loadDashboard(true);
       }
 
@@ -835,6 +879,35 @@ export default function App() {
     }
   }
 
+  async function actOnTask(taskId, approved, reason) {
+    if (!canUseApi || !taskId) return;
+
+    const nextStatus = approved ? 'queued' : 'cancelled';
+    setTasksState((current) => ({
+      ...current,
+      items: current.items.map((task) =>
+        task.task_id === taskId ? { ...task, status: nextStatus } : task
+      )
+    }));
+
+    try {
+      await request(`/api/v1/agents/tasks/${taskId}/approve`, {
+        method: 'POST',
+        body: {
+          approved,
+          reason: reason || (approved ? 'Approved from waiting queue' : 'Rejected from waiting queue')
+        }
+      });
+
+      notify('success', approved ? 'Task approved' : 'Task rejected', taskId);
+      await loadTasks(true);
+      await loadFinanceData(true);
+    } catch (error) {
+      notify('error', approved ? 'Approve failed' : 'Reject failed', normalizeError(error));
+      await loadTasks(true);
+    }
+  }
+
   async function loadDocumentsForCurrentRecord(silent = false) {
     if (!documentsState.selectedRecordType || !documentsState.selectedRecordId) {
       const message = 'Choose a record type and ID first';
@@ -912,7 +985,7 @@ export default function App() {
     }
 
     if (activeTab === 'finance' && !financeState.invoices.length && !financeState.loading) {
-      loadInvoices(true);
+      loadFinanceData(true);
     }
 
     if (activeTab === 'projects' && !projectsState.items.length && !projectsState.loading) {
@@ -923,6 +996,23 @@ export default function App() {
       loadDocuments(documentsState.selectedRecordType, documentsState.selectedRecordId, true);
     }
   }, [activeTab, canUseApi]);
+
+  useEffect(() => {
+    if (!canUseApi || events.length === 0) {
+      return;
+    }
+
+    const latestEvent = events[0];
+    const eventType = latestEvent?.type || '';
+
+    if (eventType.startsWith('agent.task') || eventType.startsWith('finance.approval')) {
+      loadTasks(true);
+    }
+
+    if (eventType.startsWith('finance.')) {
+      loadFinanceData(true);
+    }
+  }, [events, canUseApi]);
 
   const stats = useMemo(() => {
     const openInvoices = financeState.invoices.filter((invoice) => Number(invoice.balance_amount || 0) > 0);
@@ -1319,7 +1409,7 @@ export default function App() {
                 title="Finance"
                 subtitle="Invoices, payments, journal entries"
                 actions={
-                  <button type="button" onClick={() => loadInvoices(false)} disabled={!canUseApi}>
+                  <button type="button" onClick={() => loadFinanceData(false)} disabled={!canUseApi}>
                     Reload invoices
                   </button>
                 }
@@ -1510,6 +1600,120 @@ export default function App() {
                 <button type="button" onClick={createJournalEntry} disabled={!canUseApi}>
                   Post journal
                 </button>
+              </div>
+
+              <SectionHeader
+                title="Waiting approvals"
+                subtitle="Tasks blocked on spend approval"
+                actions={
+                  <button type="button" onClick={() => loadTasks(false)} disabled={!canUseApi}>
+                    Reload waiting queue
+                  </button>
+                }
+              />
+              <div className="record-list">
+                {tasksState.items
+                  .filter((task) => task.status === 'waiting_approval')
+                  .map((task) => (
+                    <article key={task.task_id} className="record-card">
+                      <div className="record-card__header">
+                        <strong>{task.task_id}</strong>
+                        <span className="badge">{task.status}</span>
+                      </div>
+                      <p>{task.task_type}</p>
+                      <p>{task.instruction || 'No instruction provided'}</p>
+                      <div className="button-row">
+                        <button
+                          type="button"
+                          onClick={() => actOnTask(task.task_id, true, 'Approved from waiting-approval view')}
+                          disabled={!canUseApi}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => actOnTask(task.task_id, false, 'Rejected from waiting-approval view')}
+                          disabled={!canUseApi}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                {tasksState.items.filter((task) => task.status === 'waiting_approval').length === 0 ? (
+                  <EmptyState
+                    title="No waiting approvals"
+                    detail="Approval-required finance tasks appear here and refresh from arca:event."
+                  />
+                ) : null}
+              </div>
+
+              <SectionHeader title="Payments" subtitle="Recent postings" />
+              <div className="record-list">
+                {financeState.payments.slice(0, 8).map((payment) => (
+                  <article key={payment.id} className="record-card">
+                    <div className="record-card__header">
+                      <strong>{payment.payment_no}</strong>
+                      <span className="badge">{formatDate(payment.payment_date)}</span>
+                    </div>
+                    <p>{formatCurrency(payment.total_amount)}</p>
+                    <p>
+                      Contact #{payment.contact_id}
+                      {payment.invoice_id ? ` · Invoice #${payment.invoice_id}` : ''}
+                    </p>
+                    <p>{payment.description || 'No description'}</p>
+                  </article>
+                ))}
+                {financeState.payments.length === 0 ? (
+                  <EmptyState title="No payments yet" detail="Posted payments will appear here." />
+                ) : null}
+              </div>
+
+              <SectionHeader title="Journal entries" subtitle="Recent postings" />
+              <div className="record-list">
+                {financeState.journalEntries.slice(0, 8).map((entry) => (
+                  <article key={entry.id} className="record-card">
+                    <div className="record-card__header">
+                      <strong>{entry.entry_no}</strong>
+                      <span className="badge">{formatDate(entry.entry_date)}</span>
+                    </div>
+                    <p>{formatCurrency(entry.total_debit)}</p>
+                    <p>{entry.description || 'No description'}</p>
+                  </article>
+                ))}
+                {financeState.journalEntries.length === 0 ? (
+                  <EmptyState title="No journal entries yet" detail="Journal postings will appear here." />
+                ) : null}
+              </div>
+
+              <SectionHeader
+                title="Reports"
+                subtitle="P&L, VAT, and open accounts receivable"
+                actions={
+                  <button type="button" onClick={() => loadFinanceData(false)} disabled={!canUseApi}>
+                    Reload reports
+                  </button>
+                }
+              />
+              <div className="record-list">
+                <article className="record-card">
+                  <div className="record-card__header">
+                    <strong>P&L</strong>
+                  </div>
+                  <pre>{JSON.stringify(financeState.reports.pl || {}, null, 2)}</pre>
+                </article>
+                <article className="record-card">
+                  <div className="record-card__header">
+                    <strong>VAT</strong>
+                  </div>
+                  <pre>{JSON.stringify(financeState.reports.vat || {}, null, 2)}</pre>
+                </article>
+                <article className="record-card">
+                  <div className="record-card__header">
+                    <strong>Open A/R</strong>
+                  </div>
+                  <pre>{JSON.stringify(financeState.reports.openAr || {}, null, 2)}</pre>
+                </article>
               </div>
             </section>
           </div>

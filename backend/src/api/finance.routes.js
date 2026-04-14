@@ -87,6 +87,32 @@ async function listInvoices(req, res, next) {
   }
 }
 
+async function listPayments(req, res, next) {
+  try {
+    const payments = financeService.listPayments({
+      contact_id: req.query.contact_id,
+      invoice_id: req.query.invoice_id,
+      from: req.query.from,
+      to: req.query.to
+    });
+    res.status(200).json({ payments });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function listJournalEntries(req, res, next) {
+  try {
+    const journal_entries = financeService.listJournalEntries({
+      from: req.query.from,
+      to: req.query.to
+    });
+    res.status(200).json({ journal_entries });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function createInvoice(req, res, next) {
   try {
     const invoice = financeService.createInvoice(req.body || {}, req.user || req.auth?.user || null);
@@ -168,6 +194,8 @@ async function reportOpenAr(req, res, next) {
 }
 
 router.get('/invoices', authenticate, requireScopes('finance:read'), listInvoices);
+router.get('/payments', authenticate, requireScopes('finance:read'), listPayments);
+router.get('/journal-entries', authenticate, requireScopes('finance:read'), listJournalEntries);
 router.post('/invoices', authenticate, requireScopes('finance:write'), createInvoice);
 router.post('/payments', authenticate, requireScopes('finance:write'), createPayment);
 router.post('/journal-entries', authenticate, requireScopes('finance:write'), createJournalEntry);
@@ -177,6 +205,8 @@ router.get('/reports/open-ar', authenticate, requireScopes('finance:read'), repo
 
 router.handlers = {
   listInvoices,
+  listPayments,
+  listJournalEntries,
   createInvoice,
   createPayment,
   createJournalEntry,

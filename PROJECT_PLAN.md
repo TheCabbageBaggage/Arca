@@ -179,7 +179,7 @@ Notes on interpretation:
 |---|---|---|---|
 | `ARCA-E1` | Prototype Bootstrap | Clean local startup and smoke verification from a fresh checkout | `done` |
 | `ARCA-E2` | Operator Access | Frontend login/session flow replaces manual token-only usage | `todo` |
-| `ARCA-E3` | Finance + Approval UX | Finance and approval flows are usable as a prototype demo without raw API knowledge | `todo` |
+| `ARCA-E3` | Finance + Approval UX | Finance and approval flows are usable as a prototype demo without raw API knowledge | `done` |
 | `ARCA-E4` | Projects + Documents UX | Project/story/document flows are coherent and demo-ready in the UI | `todo` |
 | `ARCA-E5` | Release Readiness | Docs, checklists, and prototype evidence stay aligned with the repo | `in_progress` |
 
@@ -219,9 +219,9 @@ These epics are intentionally **deferred from v1** but remain part of the planne
 
 | ID | Status | User story | Technical requirements | SP | Dependencies | Owner | Blockers | Notes |
 |---|---|---|---|---:|---|---|---|---|
-| `ARCA-US-201` | `todo` | As a finance operator, I want complete invoice/payment/journal workflows in the UI so I can run the finance demo without Postman. | Ensure create + list/report coverage for invoices, payments, and journal entries; wire success/error states to toasts; surface report data clearly; keep payload mapping consistent with `backend/src/api/finance.routes.js`. | 8 | `ARCA-US-101` | Unassigned | None | Backend is already implemented and tested. |
-| `ARCA-US-202` | `todo` | As an approver, I want waiting approval tasks to be easy to spot and act on so I can resume blocked finance work quickly. | Add filtered waiting-approval task views, approve/reject affordances, clear task context, and automatic refresh from `arca:event`; support both optimistic refresh and manual reload fallback. | 5 | `ARCA-US-101`, `ARCA-US-201` | Unassigned | None | Approval engine is already in backend/service tests. |
-| `ARCA-US-203` | `todo` | As a demo setup owner, I want a manageable spend-approval configuration path so prototype setup does not require reading SQL blindly. | Either add a minimal admin CRUD path for approval rules or make the seed/setup path explicit and discoverable in docs/scripts; whichever path is chosen must be reflected in `README.md` and smoke test docs. | 5 | `ARCA-US-002` | Unassigned | None | Current repo has migration + seed SQL but no management endpoint/UI. |
+| `ARCA-US-201` | `done` | As a finance operator, I want complete invoice/payment/journal workflows in the UI so I can run the finance demo without Postman. | Ensure create + list/report coverage for invoices, payments, and journal entries; wire success/error states to toasts; surface report data clearly; keep payload mapping consistent with `backend/src/api/finance.routes.js`. | 8 | `ARCA-US-101` | Current turn | None | Added finance list routes (`/payments`, `/journal-entries`) and UI coverage for create + list/report with toast handling. |
+| `ARCA-US-202` | `done` | As an approver, I want waiting approval tasks to be easy to spot and act on so I can resume blocked finance work quickly. | Add filtered waiting-approval task views, approve/reject affordances, clear task context, and automatic refresh from `arca:event`; support both optimistic refresh and manual reload fallback. | 5 | `ARCA-US-101`, `ARCA-US-201` | Current turn | None | Added waiting-approval queue in Finance tab with approve/reject actions, optimistic status updates, manual reload, and event-driven refresh. |
+| `ARCA-US-203` | `done` | As a demo setup owner, I want a manageable spend-approval configuration path so prototype setup does not require reading SQL blindly. | Either add a minimal admin CRUD path for approval rules or make the seed/setup path explicit and discoverable in docs/scripts; whichever path is chosen must be reflected in `README.md` and smoke test docs. | 5 | `ARCA-US-002` | Current turn | None | Chose explicit seed/setup path; documented `scripts/seed-spend-approval.sql` in README and added waiting-approval smoke-test coverage. |
 
 ### `ARCA-E4` Projects + Documents UX
 

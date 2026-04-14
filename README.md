@@ -213,11 +213,21 @@ cp data/sqlite/arca.db data/backups/arca_pre_migrate_$(date +%Y%m%d_%H%M%S).db
 - The checksum in `schema_migrations` for that file matches the migration file on disk
 - You are not mixing two different DB files from different working directories
 
-For spend-approval policy seeding, you can use:
+### Spend-approval setup (ARCA-US-203)
+
+Prototype approval rules are configured through a documented seed path so demo setup does not require reading SQL internals.
 
 ```bash
+# Apply or re-apply the default spend-approval rule set
 sqlite3 data/sqlite/arca.db < scripts/seed-spend-approval.sql
+
+# Verify the waiting-approval queue endpoint is reachable
+./scripts/smoke-test.sh http://localhost:3000
 ```
+
+- Seed file location: `scripts/seed-spend-approval.sql`
+- Smoke-test coverage: `scripts/smoke-test.sh` checks `GET /api/v1/agents/tasks?status=waiting_approval`
+- UI surface: Finance tab now includes a dedicated Waiting approvals queue with approve/reject actions
 
 ---
 

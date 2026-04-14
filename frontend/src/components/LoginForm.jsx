@@ -117,4 +117,4 @@ export default function LoginForm({ onLogin, onCancel, loading, error }) {
     </div>
   );
 }
-EOF"
+
