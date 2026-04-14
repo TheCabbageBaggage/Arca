@@ -99,11 +99,10 @@ Human ──▶ Operator UI / Orchestrator ──▶ Agent API ──▶ Arca RE
 
 ### Prerequisites
 
-- **Docker + Docker Compose** (v2.0+ recommended)
-- **Disk Space**: At least 2GB free space for Docker images and build cache
-- **Ollama** running on your host ([install](https://ollama.com/download)) — optional but free
-- A **Nextcloud instance** — optional, for document storage
-- At least one **LLM API key** (Anthropic, OpenAI, or Groq)
+- Docker + Docker Compose
+- Ollama running on your host ([install](https://ollama.com/download)) — optional but free
+- A Nextcloud instance — optional, for document storage
+- At least one LLM API key (Anthropic, OpenAI, or Groq)
 
 ### 1. Clone
 
@@ -112,79 +111,32 @@ git clone https://github.com/your-org/arca.git
 cd arca
 ```
 
-### 2. Configure Environment
+### 2. Configure
 
 ```bash
 cp .env.example .env
 # Edit .env — add your API keys and Nextcloud credentials
 ```
 
-**Important Environment Variables:**
-- `JWT_SECRET`: Secure random string for JWT token signing
-- `AGENT_KEY_SECRET`: Secure random string for agent key hashing
-- `BOOTSTRAP_ADMIN_USERNAME`: Default admin username (default: admin)
-- `BOOTSTRAP_ADMIN_PASSWORD`: Default admin password (default: admin1234)
-- `BOOTSTRAP_ADMIN_EMAIL`: Default admin email (default: admin@arca.local)
-
-### 3. Start Services
+### 3. Verify Ollama (optional)
 
 ```bash
-# Build and start all services in detached mode
+ollama serve &
+docker run --rm curlimages/curl curl -s http://host.docker.internal:11434/api/tags
+```
+
+### 4. Start
+
+```bash
 docker compose up --build -d
-
-# Check container status
-docker compose ps
-
-# View logs (optional)
-docker compose logs -f
-```
-
-**Common Issues:**
-- **Disk space**: If build fails with no space left on device, run `docker system prune -a -f`
-- **Version warning**: Warning about `version` field in docker-compose.yml is safe to ignore
-
-### 4. Run Database Migrations
-
-```bash
-# Run migrations inside the backend container
 docker compose exec backend npm run db:migrate
-
-# Verify migration status
-docker compose exec backend npm run db:migration:status
+open http://localhost
 ```
 
-**Migration Safety:** Arca uses SQLite. Always run migrations from within the container to ensure consistent DB path (`data/sqlite/arca.db`).
+> Bootstrap admin comes from `BOOTSTRAP_ADMIN_*` env vars and is created lazily on first auth lookup.
 
-### 5. Seed Initial Data (Optional)
+---
 
-```bash
-# Seed with bootstrap data (admin, sample project, contacts, etc.)
-sqlite3 data/sqlite/arca.db < scripts/seed-bootstrap.sql
-
-# Or use complete seed with more sample data
-sqlite3 data/sqlite/arca.db < scripts/seed-complete.sql
-
-# Reset database completely (with backup)
-./scripts/reset-db.sh
-```
-
-All seed scripts are **idempotent** - safe to run multiple times.
-
-### 6. Access the Application
-
-- **Frontend**: http://localhost
-- **Backend API**: http://localhost:3000
-- **Default Admin**: `admin@arca.local` / `admin1234`
-
-### 7. Run Smoke Test
-
-```bash
-# Test that everything is working
-./scripts/smoke-test.sh
-
-# Expected output shows success for each test endpoint
-# and final confirmation that all tests passed
-```
 ## DB Path + Migration Safety
 
 Arca uses SQLite, so the migration target DB path must be explicit and consistent.

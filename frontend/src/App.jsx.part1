@@ -1,0 +1,300 @@
+import LoginForm from ./components/LoginForm.jsx;
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { io } from 'socket.io-client';
+import './App.css';
+
+const TABS = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'contacts', label: 'Contacts' },
+  { id: 'finance', label: 'Finance' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'documents', label: 'Documents' }
+];
+
+const today = new Date().toISOString().slice(0, 10);
+
+const initialContactForm = {
+  type: 'debtor',
+  name: '',
+  company: '',
+  email: '',
+  phone: '',
+  address_json: '{}',
+  payment_terms_json: '{}',
+  accounting_json: '{}'
+};
+
+const initialInvoiceForm = {
+  contact_id: '',
+  issue_date: today,
+  due_date: today,
+  subtotal_net: '',
+  tax_rate: '19',
+  description: ''
+};
+
+const initialPaymentForm = {
+  contact_id: '',
+  invoice_id: '',
+  payment_date: today,
+  amount_net: '',
+  total_amount: '',
+  description: ''
+};
+
+const initialJournalForm = {
+  entry_date: today,
+  description: '',
+  debit_account: '6000',
+  credit_account: '1200',
+  amount: ''
+};
+
+const initialProjectForm = {
+  name: '',
+  code: '',
+  methodology: 'scrum',
+  status: 'planned',
+  token_budget: '',
+  client_contact_id: '',
+  start_date: today,
+  end_date: '',
+  notes: ''
+};
+
+const initialSprintForm = {
+  name: '',
+  goal: '',
+  status: 'planned',
+  start_date: today,
+  end_date: '',
+  budget_tokens: '',
+  budget_usd: '',
+  warn_threshold: '0.85',
+  hard_limit: false
+};
+
+const initialDocumentForm = {
+  record_type: 'contacts',
+  record_id: '',
+  filename: '',
+  mime_type: 'application/json',
+  content: '{\n  "note": "Attach document content here"\n}',
+  metadata_json: '{}'
+};
+
+const initialTaskForm = {
+  task_type: 'finance_posting',
+  instruction: '',
+  taskIdToApprove: '',
+  approvalReason: 'Approved from UI'
+};
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function getToday() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatDate(value) {
+  if (!value) {
+    return 'n/a';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit'
+  });
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return 'n/a';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function formatCurrency(value) {
+  const number = Number(value || 0);
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'EUR'
+  }).format(Number.isFinite(number) ? number : 0);
+}
+
+function safeParseJson(text, fallback = null) {
+  if (typeof text !== 'string' || !text.trim()) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return fallback;
+  }
+}
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeError(error) {
+  if (!error) {
+    return 'Unknown error';
+  }
+
+  return error instanceof Error ? error.message : String(error);
+}
+
+function buildQuery(query = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    params.set(key, String(value));
+  }
+  return params.toString();
+}
+
+function isPositiveInteger(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0;
+}
+
+function Field({ label, children, hint }) {
+  return (
+    <label className="field">
+      <span className="field__label">{label}</span>
+      {children}
+      {hint ? <span className="field__hint">{hint}</span> : null}
+    </label>
+  );
+}
+
+function ToastStack({ toasts, onDismiss }) {
+  if (!toasts.length) {
+    return null;
+  }
+
+  return (
+    <div className="toast-stack" aria-live="polite" aria-relevant="additions">
+      {toasts.map((toast) => (
+        <button
+          key={toast.id}
+          className={`toast toast--${toast.kind}`}
+          onClick={() => onDismiss(toast.id)}
+          type="button"
+        >
+          <span className="toast__title">{toast.title}</span>
+          {toast.detail ? <span className="toast__detail">{toast.detail}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StatCard({ label, value, tone = 'neutral', footnote }) {
+  return (
+    <article className={`stat stat--${tone}`}>
+      <p>{label}</p>
+      <strong>{value}</strong>
+      {footnote ? <span>{footnote}</span> : null}
+    </article>
+  );
+}
+
+function SectionHeader({ title, subtitle, actions }) {
+  return (
+    <div className="section-header">
+      <div>
+        <p className="section-header__eyebrow">{subtitle}</p>
+        <h2>{title}</h2>
+      </div>
+      {actions ? <div className="section-header__actions">{actions}</div> : null}
+    </div>
+  );
+}
+
+function EmptyState({ title, detail }) {
+  return (
+    <div className="empty-state">
+      <strong>{title}</strong>
+      {detail ? <p>{detail}</p> : null}
+    </div>
+  );
+}
+
+export default function App() {
+  const [token, setToken] = useState('');
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [socketState, setSocketState] = useState('connecting');
+  const [events, setEvents] = useState([]);
+  const [toasts, setToasts] = useState([]);
+  const toastId = useRef(0);
+  const [tasksState, setTasksState] = useState({
+    items: [],
+    loading: false,
+    error: null
+  });
+
+  const [contactsState, setContactsState] = useState({
+    items: [],
+    loading: false,
+    error: null,
+    filter: 'all'
+  });
+  const [contactsForm, setContactsForm] = useState(initialContactForm);
+
+  const [financeState, setFinanceState] = useState({
+    invoices: [],
+    loading: false,
+    error: null
+  });
+  const [invoiceForm, setInvoiceForm] = useState(initialInvoiceForm);
+  const [paymentForm, setPaymentForm] = useState(initialPaymentForm);
+  const [journalForm, setJournalForm] = useState(initialJournalForm);
+  const [taskForm, setTaskForm] = useState(initialTaskForm);
+
+  const [projectsState, setProjectsState] = useState({
+    items: [],
+    loading: false,
+    error: null,
+    selectedProjectId: '',
+    sprints: [],
+    sprintLoading: false,
+    sprintError: null
+  });
+  const [projectForm, setProjectForm] = useState(initialProjectForm);
+  const [sprintForm, setSprintForm] = useState(initialSprintForm);
+
+  const [documentsState, setDocumentsState] = useState({
+    items: [],
+    loading: false,
+    error: null,
+    selectedRecordType: 'contacts',
+    selectedRecordId: ''
+  });
+  const [documentForm, setDocumentForm] = useState(initialDocumentForm);
+

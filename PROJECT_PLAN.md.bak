@@ -177,7 +177,7 @@ Notes on interpretation:
 
 | Epic | Name | Outcome | Status |
 |---|---|---|---|
-| `ARCA-E1` | Prototype Bootstrap | Clean local startup and smoke verification from a fresh checkout | `done` |
+| `ARCA-E1` | Prototype Bootstrap | Clean local startup and smoke verification from a fresh checkout | `todo` |
 | `ARCA-E2` | Operator Access | Frontend login/session flow replaces manual token-only usage | `todo` |
 | `ARCA-E3` | Finance + Approval UX | Finance and approval flows are usable as a prototype demo without raw API knowledge | `todo` |
 | `ARCA-E4` | Projects + Documents UX | Project/story/document flows are coherent and demo-ready in the UI | `todo` |
@@ -204,16 +204,16 @@ These epics are intentionally **deferred from v1** but remain part of the planne
 
 | ID | Status | User story | Technical requirements | SP | Dependencies | Owner | Blockers | Notes |
 |---|---|---|---|---:|---|---|---|---|
-| `ARCA-US-001` | `done` | As a contributor, I want a verified local bootstrap path so I can start the system from a clean checkout without guessing. | Validate `.env.example`; verify `docker compose up --build -d`; verify migration path against `data/sqlite/arca.db`; document exact commands and failure modes in `README.md`. | 3 | None | Unassigned | None | Use existing DB path safety guidance in `README.md`. |
-| `ARCA-US-002` | `done` | As a demo operator, I want reproducible seed data so I can exercise contacts, finance, projects, and approvals immediately. | Add idempotent seed script(s) for bootstrap admin, sample contacts, one project, one sprint, one story, one invoice, and one approval rule; keep canonical paths under `scripts/`; document how to reset/reseed. | 5 | `ARCA-US-001` | Unassigned | None | Existing `scripts/seed-spend-approval.sql` is a starting point only. |
-| `ARCA-US-003` | `done` | As another agent, I want a smoke-test command so I can verify the prototype before or after making changes. | Add a non-interactive smoke test that hits health, login, at least one create/list flow, and audit verification; document expected success output; make it runnable from repo root. | 5 | `ARCA-US-001`, `ARCA-US-002` | Unassigned | None | Favor shell or Node tooling already used in the repo. |
+| `ARCA-US-001` | `todo` | As a contributor, I want a verified local bootstrap path so I can start the system from a clean checkout without guessing. | Validate `.env.example`; verify `docker compose up --build -d`; verify migration path against `data/sqlite/arca.db`; document exact commands and failure modes in `README.md`. | 3 | None | Unassigned | None | Use existing DB path safety guidance in `README.md`. |
+| `ARCA-US-002` | `todo` | As a demo operator, I want reproducible seed data so I can exercise contacts, finance, projects, and approvals immediately. | Add idempotent seed script(s) for bootstrap admin, sample contacts, one project, one sprint, one story, one invoice, and one approval rule; keep canonical paths under `scripts/`; document how to reset/reseed. | 5 | `ARCA-US-001` | Unassigned | None | Existing `scripts/seed-spend-approval.sql` is a starting point only. |
+| `ARCA-US-003` | `todo` | As another agent, I want a smoke-test command so I can verify the prototype before or after making changes. | Add a non-interactive smoke test that hits health, login, at least one create/list flow, and audit verification; document expected success output; make it runnable from repo root. | 5 | `ARCA-US-001`, `ARCA-US-002` | Unassigned | None | Favor shell or Node tooling already used in the repo. |
 
 ### `ARCA-E2` Operator Access
 
 | ID | Status | User story | Technical requirements | SP | Dependencies | Owner | Blockers | Notes |
 |---|---|---|---|---:|---|---|---|---|
-| `ARCA-US-101` | `done` | As an operator, I want to log in from the frontend so I do not need to paste a JWT manually. | Use existing `/api/v1/auth/login`; add login form, success/error handling, logout, and token persistence; preserve agent-key/manual token entry as an advanced fallback, not the primary path. | 5 | `ARCA-US-001` | Unassigned | None | Current manual token state lives in `frontend/src/App.jsx`. |
-| `ARCA-US-102` | `in-progress` | As an operator, I want the UI to make session state obvious so I know whether actions will work before submitting forms. | Show active auth mode, token/session expiry-safe state, disabled states when unauthenticated, and clear empty/error banners; keep the current localStorage pattern or replace it consistently. | 3 | `ARCA-US-101` | Unassigned | None | Pairs naturally with the existing toast and status components. |
+| `ARCA-US-101` | `todo` | As an operator, I want to log in from the frontend so I do not need to paste a JWT manually. | Use existing `/api/v1/auth/login`; add login form, success/error handling, logout, and token persistence; preserve agent-key/manual token entry as an advanced fallback, not the primary path. | 5 | `ARCA-US-001` | Unassigned | None | Current manual token state lives in `frontend/src/App.jsx`. |
+| `ARCA-US-102` | `todo` | As an operator, I want the UI to make session state obvious so I know whether actions will work before submitting forms. | Show active auth mode, token/session expiry-safe state, disabled states when unauthenticated, and clear empty/error banners; keep the current localStorage pattern or replace it consistently. | 3 | `ARCA-US-101` | Unassigned | None | Pairs naturally with the existing toast and status components. |
 
 ### `ARCA-E3` Finance + Approval UX
 
