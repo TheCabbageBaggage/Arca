@@ -2,11 +2,11 @@
 # Arca Smoke Test
 # Non-interactive smoke test for Arca prototype
 # Usage: ./scripts/smoke-test.sh [BASE_URL]
-# Default BASE_URL: http://localhost
+# Default BASE_URL: http://localhost:3000
 
 set -e
 
-BASE_URL="${1:-http://localhost}"
+BASE_URL="${1:-http://localhost:3000}"
 echo "Arca Smoke Test"
 echo "==============="
 echo "Testing against: $BASE_URL"
@@ -59,7 +59,7 @@ make_request() {
 }
 
 # 1. Health endpoint
-make_request "GET" "/api/v1/health" "" "200" "Health endpoint"
+make_request "GET" "/api/health" "" "200" "Health endpoint"
 
 # 2. Login with bootstrap admin
 LOGIN_DATA='{"username":"admin","password":"admin1234"}'
