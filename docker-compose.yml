@@ -30,6 +30,8 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - DATABASE_PATH=/data/sqlite/arca.db
+    ports:
+      - "3000:3000"
     volumes:
       - ./data/sqlite:/data/sqlite
       - ./data/uploads:/data/uploads
@@ -49,10 +51,7 @@ services:
       - ./data/sqlite:/data/sqlite
       - ./data/backups:/data/backups
       - ./scripts/backup.sh:/scripts/backup.sh:ro
-    command: >
-      sh -c "apk add --no-cache bash sqlite curl tzdata &&
-             echo '0 2 * * * /bin/bash /scripts/backup.sh >> /var/log/backup.log 2>&1' > /etc/crontabs/root &&
-             crond -f -l 8"
+    command: sh -c "apk add --no-cache bash sqlite curl tzdata && echo '0 2 * * * /bin/bash /scripts/backup.sh >> /var/log/backup.log 2>&1' > /etc/crontabs/root && crond -f -l 8"
 
 volumes:
   redis_data:
