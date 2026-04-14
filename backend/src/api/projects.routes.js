@@ -53,6 +53,15 @@ async function createSprint(req, res, next) {
   }
 }
 
+async function listProjectStories(req, res, next) {
+  try {
+    const stories = projectsService.listStories(req.params.id, req.query || {});
+    res.status(200).json({ stories });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getSprintBurndown(req, res, next) {
   try {
     const events = projectsService.getBurndown(req.params.id);
@@ -105,6 +114,7 @@ router.get('/projects', authenticate, requireScopes('projects:read'), listProjec
 router.post('/projects', authenticate, requireScopes('projects:write'), createProject);
 router.get('/projects/:id/sprints', authenticate, requireScopes('projects:read'), listProjectSprints);
 router.post('/projects/:id/sprints', authenticate, requireScopes('projects:write'), createSprint);
+router.get('/projects/:id/stories', authenticate, requireScopes('projects:read'), listProjectStories);
 router.get('/sprints/:id/burndown', authenticate, requireScopes('projects:read'), getSprintBurndown);
 router.post('/user-stories', authenticate, requireScopes('projects:write'), createUserStory);
 router.patch('/user-stories/:id/status', authenticate, requireScopes('projects:write'), updateUserStoryStatus);
@@ -115,6 +125,7 @@ router.handlers = {
   createProject,
   listProjectSprints,
   createSprint,
+  listProjectStories,
   getSprintBurndown,
   createUserStory,
   updateUserStoryStatus,

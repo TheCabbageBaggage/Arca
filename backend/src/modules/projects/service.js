@@ -50,6 +50,10 @@ class ProjectsService {
     return this.repository.listSprints(projectId);
   }
 
+  listStories(projectId, payload = {}) {
+    return this.repository.listStories(projectId, payload.sprint_id || payload.sprintId || null);
+  }
+
   createSprint(projectId, payload = {}, actor = null) {
     requireField(payload.name, 'name is required');
     return this.repository.createSprint(projectId, payload, actorOrSystem(actor));

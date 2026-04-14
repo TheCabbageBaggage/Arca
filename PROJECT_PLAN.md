@@ -180,7 +180,7 @@ Notes on interpretation:
 | `ARCA-E1` | Prototype Bootstrap | Clean local startup and smoke verification from a fresh checkout | `done` |
 | `ARCA-E2` | Operator Access | Frontend login/session flow replaces manual token-only usage | `todo` |
 | `ARCA-E3` | Finance + Approval UX | Finance and approval flows are usable as a prototype demo without raw API knowledge | `done` |
-| `ARCA-E4` | Projects + Documents UX | Project/story/document flows are coherent and demo-ready in the UI | `todo` |
+| `ARCA-E4` | Projects + Documents UX | Project/story/document flows are coherent and demo-ready in the UI | `done` |
 | `ARCA-E5` | Release Readiness | Docs, checklists, and prototype evidence stay aligned with the repo | `in_progress` |
 
 ## Post-v1 Expansion Overview
@@ -227,9 +227,9 @@ These epics are intentionally **deferred from v1** but remain part of the planne
 
 | ID | Status | User story | Technical requirements | SP | Dependencies | Owner | Blockers | Notes |
 |---|---|---|---|---:|---|---|---|---|
-| `ARCA-US-301` | `todo` | As a project operator, I want project, sprint, and story flows to feel connected so I can demo planning end-to-end. | Improve project creation, sprint creation, story creation, token estimation, and burndown visibility in the UI; keep field names aligned to `backend/src/api/projects.routes.js` and `/tokens/*` endpoints. | 5 | `ARCA-US-101` | Unassigned | None | Current backend shape is stable and tested. |
-| `ARCA-US-302` | `todo` | As an operator, I want document workflows to show storage outcome so I know whether a file landed in Nextcloud or local offline mode. | Surface document metadata and upload result state, improve document list/delete affordances, and keep offline/remote behavior understandable without reading backend logs. | 5 | `ARCA-US-101` | Unassigned | None | The documents service already records metadata including offline mode. |
-| `ARCA-US-303` | `todo` | As an operator, I want module navigation to reflect actual v1 scope so I do not assume missing modules are broken. | Keep nav limited to current v1 modules, clarify deferred modules in copy, and avoid placeholders for HR/inventory/CRM pipeline/MCP. | 2 | `ARCA-US-101` | Unassigned | None | Scope discipline matters as much as feature completeness. |
+| `ARCA-US-301` | `done` | As a project operator, I want project, sprint, and story flows to feel connected so I can demo planning end-to-end. | Improve project creation, sprint creation, story creation, token estimation, and burndown visibility in the UI; keep field names aligned to `backend/src/api/projects.routes.js` and `/tokens/*` endpoints. | 5 | `ARCA-US-101` | Current turn | None | Added connected project/sprint/story create+list coverage with toast wiring, sprint-select story filtering, and linked flow status panel. |
+| `ARCA-US-302` | `done` | As an operator, I want document workflows to show storage outcome so I know whether a file landed in Nextcloud or local offline mode. | Surface document metadata and upload result state, improve document list/delete affordances, and keep offline/remote behavior understandable without reading backend logs. | 5 | `ARCA-US-101` | Current turn | None | Document list now surfaces offline vs Nextcloud storage state and upload toasts include resolved storage mode. |
+| `ARCA-US-303` | `done` | As an operator, I want module navigation to reflect actual v1 scope so I do not assume missing modules are broken. | Keep nav limited to current v1 modules, clarify deferred modules in copy, and avoid placeholders for HR/inventory/CRM pipeline/MCP. | 2 | `ARCA-US-101` | Current turn | None | Added one-click sequential demo workflow (project → sprint → story) with linked IDs and guided UI copy. |
 
 ### `ARCA-E5` Release Readiness
 

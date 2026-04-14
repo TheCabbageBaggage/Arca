@@ -74,6 +74,16 @@ const initialSprintForm = {
   hard_limit: false
 };
 
+const initialStoryForm = {
+  sprint_id: '',
+  title: '',
+  description: '',
+  acceptance_criteria_json: '[Given, When, Then]',
+  status: 'backlog',
+  priority: '3',
+  estimate_tokens: ''
+};
+
 const initialDocumentForm = {
   record_type: 'contacts',
   record_id: '',
@@ -287,12 +297,22 @@ export default function App() {
     loading: false,
     error: null,
     selectedProjectId: '',
+    selectedSprintId: '',
     sprints: [],
     sprintLoading: false,
-    sprintError: null
+    sprintError: null,
+    stories: [],
+    storyLoading: false,
+    storyError: null,
+    lastCreated: {
+      projectId: null,
+      sprintId: null,
+      storyId: null
+    }
   });
   const [projectForm, setProjectForm] = useState(initialProjectForm);
   const [sprintForm, setSprintForm] = useState(initialSprintForm);
+  const [storyForm, setStoryForm] = useState(initialStoryForm);
 
   const [documentsState, setDocumentsState] = useState({
     items: [],
@@ -511,6 +531,33 @@ export default function App() {
     }
   }
 
+  async function loadProjectStories(projectId, sprintId = '', silent = false) {
+    if (!canUseApi || !projectId) return [];
+
+    setProjectsState((current) => ({ ...current, storyLoading: true, storyError: null }));
+    try {
+      const payload = await request(`/api/v1/projects/${projectId}/stories`, {
+        query: { sprint_id: sprintId || undefined }
+      });
+      const stories = payload.stories || [];
+      setProjectsState((current) => ({
+        ...current,
+        selectedProjectId: String(projectId),
+        selectedSprintId: sprintId ? String(sprintId) : current.selectedSprintId,
+        stories,
+        storyLoading: false,
+        storyError: null
+      }));
+      if (!silent) notify('success', 'Stories loaded', `${stories.length} record(s)`);
+      return stories;
+    } catch (error) {
+      const message = normalizeError(error);
+      setProjectsState((current) => ({ ...current, storyLoading: false, storyError: message }));
+      if (!silent) notify('error', 'Stories failed', message);
+      return [];
+    }
+  }
+
   async function loadTasks(silent = false) {
     if (!canUseApi) return [];
 
@@ -538,13 +585,16 @@ export default function App() {
     try {
       const payload = await request(`/api/v1/projects/${projectId}/sprints`);
       const sprints = payload.sprints || [];
+      const nextSprintId = String(sprints[0]?.id || '');
       setProjectsState((current) => ({
         ...current,
         selectedProjectId: String(projectId),
+        selectedSprintId: current.selectedSprintId || nextSprintId,
         sprints,
         sprintLoading: false,
         sprintError: null
       }));
+      await loadProjectStories(projectId, nextSprintId, true);
       if (!silent) notify('success', 'Sprints loaded', `${sprints.length} record(s)`);
       return sprints;
     } catch (error) {
@@ -802,6 +852,11 @@ export default function App() {
       const project = result.project;
       notify('success', 'Project created', project?.project_no || project?.name || 'Done');
       setProjectForm(initialProjectForm);
+      setProjectsState((current) => ({
+        ...current,
+        selectedProjectId: project?.id ? String(project.id) : current.selectedProjectId,
+        lastCreated: { ...current.lastCreated, projectId: project?.id || null }
+      }));
       await loadProjects(true);
       await loadDashboard(true);
       setActiveTab('projects');
@@ -839,12 +894,124 @@ export default function App() {
         }
       });
 
-      notify('success', 'Sprint created', result?.sprint?.sprint_no || 'Done');
+      const sprint = result?.sprint;
+      notify('success', 'Sprint created', sprint?.sprint_no || 'Done');
       setSprintForm(initialSprintForm);
+      setProjectsState((current) => ({
+        ...current,
+        selectedSprintId: sprint?.id ? String(sprint.id) : current.selectedSprintId,
+        lastCreated: { ...current.lastCreated, sprintId: sprint?.id || null }
+      }));
       await loadProjectSprints(projectsState.selectedProjectId, true);
       await loadProjects(true);
     } catch (error) {
       notify('error', 'Sprint failed', normalizeError(error));
+    }
+  }
+
+
+  async function createStory() {
+    if (!canUseApi) return;
+
+    if (!projectsState.selectedProjectId) {
+      notify('error', 'Story validation', 'Select a project first');
+      return;
+    }
+
+    if (!storyForm.title.trim() || !storyForm.description.trim()) {
+      notify('error', 'Story validation', 'Title and description are required');
+      return;
+    }
+
+    try {
+      const result = await request('/api/v1/user-stories', {
+        method: 'POST',
+        body: {
+          project_id: Number(projectsState.selectedProjectId),
+          sprint_id: storyForm.sprint_id ? Number(storyForm.sprint_id) : undefined,
+          title: storyForm.title.trim(),
+          description: storyForm.description.trim(),
+          acceptance_criteria: safeParseJson(storyForm.acceptance_criteria_json, []) ?? [],
+          status: storyForm.status,
+          priority: Number(storyForm.priority || 3),
+          estimate_tokens: storyForm.estimate_tokens ? Number(storyForm.estimate_tokens) : undefined
+        }
+      });
+
+      const story = result?.story;
+      notify('success', 'Story created', story?.story_no || story?.title || 'Done');
+      setStoryForm(initialStoryForm);
+      setProjectsState((current) => ({
+        ...current,
+        lastCreated: { ...current.lastCreated, storyId: story?.id || null }
+      }));
+      await loadProjectStories(projectsState.selectedProjectId, story?.sprint_id || '', true);
+      await loadProjects(true);
+    } catch (error) {
+      notify('error', 'Story failed', normalizeError(error));
+    }
+  }
+
+  async function createSequentialWorkflow() {
+    if (!canUseApi) return;
+
+    const ts = Date.now();
+    try {
+      const projectResult = await request('/api/v1/projects', {
+        method: 'POST',
+        body: {
+          name: `Demo Project ${ts}`,
+          methodology: 'scrum',
+          status: 'active',
+          start_date: getToday(),
+          notes: 'Created via sequential workflow'
+        }
+      });
+      const project = projectResult?.project;
+
+      const sprintResult = await request(`/api/v1/projects/${project.id}/sprints`, {
+        method: 'POST',
+        body: {
+          name: `Sprint 1 - ${ts}`,
+          goal: 'Demo workflow sprint',
+          status: 'active',
+          start_date: getToday(),
+          warn_threshold: 0.85
+        }
+      });
+      const sprint = sprintResult?.sprint;
+
+      const storyResult = await request('/api/v1/user-stories', {
+        method: 'POST',
+        body: {
+          project_id: project.id,
+          sprint_id: sprint.id,
+          title: `Story ${ts}`,
+          description: 'Sequentially created demo story',
+          acceptance_criteria: ['Given project and sprint exist', 'When story is created', 'Then links are visible'],
+          status: 'backlog',
+          priority: 3
+        }
+      });
+      const story = storyResult?.story;
+
+      setProjectsState((current) => ({
+        ...current,
+        selectedProjectId: String(project.id),
+        selectedSprintId: String(sprint.id),
+        lastCreated: {
+          projectId: project.id,
+          sprintId: sprint.id,
+          storyId: story?.id || null
+        }
+      }));
+
+      await loadProjects(true);
+      await loadProjectSprints(project.id, true);
+      await loadProjectStories(project.id, sprint.id, true);
+      notify('success', 'Sequential workflow complete', `${project.project_no} → ${sprint.sprint_no} → ${story?.story_no || 'story'}`);
+    } catch (error) {
+      notify('error', 'Sequential workflow failed', normalizeError(error));
     }
   }
 
@@ -970,7 +1137,8 @@ export default function App() {
         }
       });
 
-      notify('success', 'Document uploaded', result?.document?.filename || 'Done');
+      const storageMode = result?.document?.metadata?.offline ? 'local fallback' : 'nextcloud';
+      notify('success', 'Document uploaded', `${result?.document?.filename || 'Done'} (${storageMode})`);
       setDocumentForm(initialDocumentForm);
       await loadDocuments(recordType, recordId, true);
     } catch (error) {
@@ -1751,9 +1919,14 @@ export default function App() {
                 title="Projects"
                 subtitle="Planning"
                 actions={
-                  <button type="button" onClick={() => loadProjects(false)} disabled={!canUseApi}>
-                    Reload
-                  </button>
+                  <div className="button-row">
+                    <button type="button" onClick={createSequentialWorkflow} disabled={!canUseApi}>
+                      Run sequential demo
+                    </button>
+                    <button type="button" onClick={() => loadProjects(false)} disabled={!canUseApi}>
+                      Reload
+                    </button>
+                  </div>
                 }
               />
 
@@ -1798,7 +1971,22 @@ export default function App() {
                   {projectsState.sprintLoading ? <div className="loading-bar">Loading sprints...</div> : null}
                   <div className="compact-list">
                     {projectsState.sprints.map((sprint) => (
-                      <article key={sprint.id} className="compact-item">
+                      <article
+                        key={sprint.id}
+                        className={`compact-item ${String(sprint.id) === String(projectsState.selectedSprintId) ? 'is-selected' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          setProjectsState((current) => ({ ...current, selectedSprintId: String(sprint.id) }));
+                          loadProjectStories(projectsState.selectedProjectId, sprint.id, true);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            setProjectsState((current) => ({ ...current, selectedSprintId: String(sprint.id) }));
+                            loadProjectStories(projectsState.selectedProjectId, sprint.id, true);
+                          }
+                        }}
+                      >
                         <strong>{sprint.name}</strong>
                         <span>
                           {sprint.sprint_no} · {sprint.status} · {formatDate(sprint.start_date)} to {formatDate(sprint.end_date)}
@@ -1809,6 +1997,30 @@ export default function App() {
                       <EmptyState title="No sprints yet" detail="Create a sprint using the form at right." />
                     ) : null}
                   </div>
+
+                  <h4 style={{ marginTop: '1rem' }}>Stories</h4>
+                  {projectsState.storyError ? <div className="error-banner">{projectsState.storyError}</div> : null}
+                  {projectsState.storyLoading ? <div className="loading-bar">Loading stories...</div> : null}
+                  <div className="compact-list">
+                    {projectsState.stories.map((story) => (
+                      <article key={story.id} className="compact-item">
+                        <strong>{story.story_no} · {story.title}</strong>
+                        <span>Sprint {story.sprint_id || 'none'} · {story.status} · est {story.estimated_tokens || 0}</span>
+                      </article>
+                    ))}
+                    {!projectsState.storyLoading && projectsState.stories.length === 0 ? (
+                      <EmptyState title="No stories yet" detail="Create one using the story form." />
+                    ) : null}
+                  </div>
+
+                  {projectsState.lastCreated.projectId || projectsState.lastCreated.sprintId || projectsState.lastCreated.storyId ? (
+                    <div className="status-panel">
+                      <strong>Last linked flow</strong>
+                      <span>
+                        project #{projectsState.lastCreated.projectId || '-'} → sprint #{projectsState.lastCreated.sprintId || '-'} → story #{projectsState.lastCreated.storyId || '-'}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -1983,6 +2195,59 @@ export default function App() {
                   Create sprint
                 </button>
               </div>
+
+              <SectionHeader title="Create story" subtitle="Projects" />
+              <div className="form-stack">
+                <Field label="Sprint ID">
+                  <input
+                    value={storyForm.sprint_id}
+                    onChange={(event) => setStoryForm((current) => ({ ...current, sprint_id: event.target.value }))}
+                    placeholder={projectsState.selectedSprintId || 'Sprint ID'}
+                  />
+                </Field>
+                <Field label="Title">
+                  <input
+                    value={storyForm.title}
+                    onChange={(event) => setStoryForm((current) => ({ ...current, title: event.target.value }))}
+                    placeholder="As a user..."
+                  />
+                </Field>
+                <Field label="Description">
+                  <textarea
+                    rows={3}
+                    value={storyForm.description}
+                    onChange={(event) => setStoryForm((current) => ({ ...current, description: event.target.value }))}
+                  />
+                </Field>
+                <Field label="Acceptance criteria JSON">
+                  <textarea
+                    rows={3}
+                    value={storyForm.acceptance_criteria_json}
+                    onChange={(event) => setStoryForm((current) => ({ ...current, acceptance_criteria_json: event.target.value }))}
+                  />
+                </Field>
+                <Field label="Status">
+                  <select
+                    value={storyForm.status}
+                    onChange={(event) => setStoryForm((current) => ({ ...current, status: event.target.value }))}
+                  >
+                    <option value="backlog">Backlog</option>
+                    <option value="todo">Todo</option>
+                    <option value="in_progress">In progress</option>
+                    <option value="done">Done</option>
+                  </select>
+                </Field>
+                <Field label="Priority (1-5)">
+                  <input
+                    value={storyForm.priority}
+                    onChange={(event) => setStoryForm((current) => ({ ...current, priority: event.target.value }))}
+                  />
+                </Field>
+                <button type="button" onClick={createStory} disabled={!canUseApi || !projectsState.selectedProjectId}>
+                  Create story
+                </button>
+                <p className="field__hint">Sequence: create project → create sprint → create story.</p>
+              </div>
             </section>
           </div>
         ) : null}
@@ -1992,7 +2257,7 @@ export default function App() {
             <section className="panel panel--span-2">
               <SectionHeader
                 title="Documents"
-                subtitle="Nextcloud"
+                subtitle="Nextcloud (offline fallback aware)"
                 actions={
                   <button type="button" onClick={() => loadDocumentsForCurrentRecord(false)} disabled={!canUseApi}>
                     Reload
@@ -2044,6 +2309,7 @@ export default function App() {
                     </div>
                     <p>{document.nextcloud_path}</p>
                     <p>{formatDateTime(document.created_at)}</p>
+                    <p>{document?.metadata?.offline ? 'Stored in local fallback mode' : 'Stored in Nextcloud'}</p>
                     <div className="button-row">
                       <button type="button" onClick={() => deleteDocument(document.id)} disabled={!canUseApi}>
                         Delete

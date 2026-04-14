@@ -248,6 +248,21 @@ class ProjectsRepository {
     return rows.map((row) => mapSprint(row, { budget: this.getSprintBudgetStatus(row.id) }));
   }
 
+  listStories(projectId, sprintId = null) {
+    const db = this.ensure();
+    const baseSql = `SELECT * FROM user_stories WHERE project_id = ?`;
+
+    const rows = sprintId
+      ? db
+        .prepare(`${baseSql} AND sprint_id = ? ORDER BY created_at DESC, id DESC`)
+        .all(Number(projectId), Number(sprintId))
+      : db
+        .prepare(`${baseSql} ORDER BY created_at DESC, id DESC`)
+        .all(Number(projectId));
+
+    return rows.map((row) => mapStory(row));
+  }
+
   nextSprintNo(db, year) {
     const row = db.prepare(
       `SELECT MAX(CAST(substr(sprint_no, 10) AS INTEGER)) AS max_number
