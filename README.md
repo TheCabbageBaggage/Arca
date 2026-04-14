@@ -12,7 +12,7 @@
 
 *Every record. Every agent. One source of truth.*
 
-[Documentation](documentation.md) · [v1 Scope Freeze](V1_SCOPE_FREEZE.md) · [Project Plan](PROJECT_PLAN.md) · [Quickstart](#quickstart) · [Architecture](#architecture-at-a-glance) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+[Documentation](documentation.md) · [v1 Scope Freeze](V1_SCOPE_FREEZE.md) · [Project Plan](PROJECT_PLAN.md) · [Prototype Exit Checklist](PROTOTYPE_EXIT_CHECKLIST.md) · [Quickstart](#quickstart) · [Architecture](#architecture-at-a-glance) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -90,6 +90,7 @@ Human ──▶ Operator UI / Orchestrator ──▶ Agent API ──▶ Arca RE
 | [`README.md`](README.md) | Entry point for the repository: what is implemented, how to run it, and where the v1 source-of-truth docs live |
 | [`V1_SCOPE_FREEZE.md`](V1_SCOPE_FREEZE.md) | Release contract for what belongs in `v1` and what is explicitly deferred |
 | [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Execution backlog with epics, stories, technical requirements, story points, and handoff notes for another agent |
+| [`PROTOTYPE_EXIT_CHECKLIST.md`](PROTOTYPE_EXIT_CHECKLIST.md) | Binary go/no-go release checklist for deciding when `v1` is demo-ready |
 | [`documentation.md`](documentation.md) | Broad technical/product vision and reference material; useful context, but broader than the current shippable v1 subset |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability disclosure process and security focus areas |
 

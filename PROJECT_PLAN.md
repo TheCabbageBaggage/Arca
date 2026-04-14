@@ -181,7 +181,7 @@ Notes on interpretation:
 | `ARCA-E2` | Operator Access | Frontend login/session flow replaces manual token-only usage | `todo` |
 | `ARCA-E3` | Finance + Approval UX | Finance and approval flows are usable as a prototype demo without raw API knowledge | `done` |
 | `ARCA-E4` | Projects + Documents UX | Project/story/document flows are coherent and demo-ready in the UI | `done` |
-| `ARCA-E5` | Release Readiness | Docs, checklists, and prototype evidence stay aligned with the repo | `in_progress` |
+| `ARCA-E5` | Release Readiness | Docs, checklists, and prototype evidence stay aligned with the repo | `done` |
 
 ## Post-v1 Expansion Overview
 
@@ -237,7 +237,7 @@ These epics are intentionally **deferred from v1** but remain part of the planne
 |---|---|---|---|---:|---|---|---|---|
 | `ARCA-US-401` | `done` | As a contributor, I want the repository docs to match the actual codebase so I can trust the stated v1 scope. | Align `README.md` and `V1_SCOPE_FREEZE.md` with implemented repo state; stop over-claiming deferred modules; add a file-purpose map and explicit v1 source-of-truth docs. | 3 | None | Current turn | None | Completed in this change set. |
 | `ARCA-US-402` | `done` | As another agent, I want a tracked execution backlog so I can continue work without repository archaeology. | Create `PROJECT_PLAN.md` with epics, story IDs, technical requirements, story points, dependencies, and execution rules. | 3 | None | Current turn | None | Completed in this change set. |
-| `ARCA-US-403` | `todo` | As a release owner, I want a prototype exit checklist so I can decide when `v1` is demo-ready. | Add a concise release checklist covering bootstrap, smoke test, core UI walkthrough, audit verify, backup path, and docs alignment; link it from `README.md` or this plan. | 3 | `ARCA-US-001`, `ARCA-US-003`, `ARCA-US-201`, `ARCA-US-301`, `ARCA-US-302` | Unassigned | None | Keep it short and binary. |
+| `ARCA-US-403` | `done` | As a release owner, I want a prototype exit checklist so I can decide when `v1` is demo-ready. | Add a concise release checklist covering bootstrap, smoke test, core UI walkthrough, audit verify, backup path, and docs alignment; link it from `README.md` or this plan. | 3 | `ARCA-US-001`, `ARCA-US-003`, `ARCA-US-201`, `ARCA-US-301`, `ARCA-US-302` | Current turn | None | Added `PROTOTYPE_EXIT_CHECKLIST.md` with binary checks and linked it from README. |
 
 ## Post-v1 Epic Backlog
 
