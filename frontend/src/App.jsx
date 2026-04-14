@@ -257,7 +257,7 @@ export default function App() {
     items: [],
     loading: false,
     error: null,
-    filter: "all"
+    filter: 'all'
   });
 
   const [contactsState, setContactsState] = useState({
@@ -274,7 +274,8 @@ export default function App() {
     journalEntries: [],
     reports: { pl: null, vat: null, openAr: null },
     loading: false,
-    error: null
+    error: null,
+    activeView: 'invoices'
   });
   const [invoiceForm, setInvoiceForm] = useState(initialInvoiceForm);
   const [paymentForm, setPaymentForm] = useState(initialPaymentForm);
@@ -308,11 +309,11 @@ export default function App() {
     error: null
   });
   const [approvalRuleForm, setApprovalRuleForm] = useState({
-    threshold_usd: "",
-    scope: "finance:write",
-    approver_key_id: "",
-    auto_approve_usd: "",
-    notify_human_usd: ""
+    threshold_usd: '',
+    scope: 'finance:write',
+    approver_key_id: '',
+    auto_approve_usd: '',
+    notify_human_usd: ''
   });
 
   const canUseApi = token.trim().length > 0;
@@ -344,6 +345,29 @@ export default function App() {
     socket.on('connect_error', () => setSocketState('error'));
     socket.on('arca:event', (event) => {
       setEvents((previous) => [event, ...previous].slice(0, 100));
+      
+      // Auto-refresh on finance events
+      if (event.type?.startsWith('finance.')) {
+        if (event.type === 'finance.approval.required') {
+          notify('warning', 'Approval required', event.approval?.operation || 'Finance operation');
+        }
+        // Optimistic refresh - will be triggered on next data fetch
+        if (canUseApi) {
+          setTimeout(() => {
+            loadInvoices(true);
+            loadPayments(true);
+            loadJournalEntries(true);
+            loadTasks(true);
+          }, 500);
+        }
+      }
+      
+      // Auto-refresh on task events
+      if (event.type?.startsWith('agent.task.')) {
+        if (canUseApi) {
+          setTimeout(() => loadTasks(true), 500);
+        }
+      }
     });
 
     return () => socket.close();
@@ -441,7 +465,8 @@ export default function App() {
           openAr: openArPayload.report || null
         },
         loading: false,
-        error: null
+        error: null,
+    activeView: 'invoices'
       }));
 
       if (!silent) {
