@@ -39,7 +39,7 @@ export default function FinancePage({ token }) {
       {error && <p className='error'>{error}</p>}
       {loading ? <p>Loading...</p> : tab === 'invoices' ? (
         <table className='data-table'>
-          <thead><tr><th>No</th><th>Partner</th><th>Date</th><th>Due</th><th>Net</th><th>VAT</th><th>Gross</th><th>Status</th></tr></thead>
+          <thead><tr><th>No</th><th>Partner</th><th>Date</th><th>Due</th><th>Net</th><th>VAT</th><th>Gross</th><th>Status</th><th>RC</th></tr></thead>
           <tbody>
             {invoices.map(i => (
               <tr key={i.id}>
@@ -48,16 +48,17 @@ export default function FinancePage({ token }) {
                 <td>{i.invoice_date}</td>
                 <td>{i.due_date}</td>
                 <td>{fmt(i.subtotal_net)}</td>
-                <td>{fmt(i.tax_amount)}</td>
+                <td>{fmt(i.tax_amount)} {i.reverse_charge ? '(0% RC)' : ''}</td>
                 <td>{fmt(i.total_gross)}</td>
                 <td>{i.status}</td>
+                <td>{i.reverse_charge ? '🔁' : ''}</td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
         <table className='data-table'>
-          <thead><tr><th>No</th><th>Partner</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead>
+          <thead><tr><th>No</th><th>Partner</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th><th>RC</th></tr></thead>
           <tbody>
             {payments.map(p => (
               <tr key={p.id}>

@@ -38,6 +38,8 @@ function mapInvoice(row) {
     tax_rate: row.tax_rate,
     reverse_charge: row.reverse_charge === 1,
     vat_rate: row.vat_rate,
+    vat_note: row.reverse_charge === 1 ? 'Steuerschuldnerschaft des Leistungsempfängers' : null,
+    is_eu_b2b: row.vat_country && row.vat_country !== 'AT' && row.vat_valid === 1 ? true : false,
     tax_amount: row.tax_amount,
     total_gross: row.total_gross,
     paid_amount: row.paid_amount,
@@ -137,7 +139,7 @@ class FinanceRepository {
   }
 
   getInvoiceRowById(db, id) {
-    return db.prepare(`SELECT i.*, COALESCE(bp.name, i.business_partner_name) AS bp_name FROM invoices i LEFT JOIN contacts bp ON bp.id = i.business_partner_id WHERE i.id = ? LIMIT 1`).get(Number(id)) || null;
+    return db.prepare(`SELECT i.*, COALESCE(bp.name, i.business_partner_name) AS bp_name, c.vat_country, c.vat_valid FROM invoices i LEFT JOIN contacts bp ON bp.id = i.business_partner_id LEFT JOIN contacts c ON c.id = i.contact_id WHERE i.id = ? LIMIT 1`).get(Number(id)) || null;
   }
 
   getPaymentRowById(db, id) {
