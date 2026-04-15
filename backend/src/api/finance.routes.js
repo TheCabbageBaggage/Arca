@@ -31,6 +31,21 @@ function actorFromUser(user) {
   };
 }
 
+
+function maybeReturnPolicyApproval(res, error) {
+  if (error?.code !== APPROVAL_POLICY_REQUIRED) {
+    return false;
+  }
+
+  res.status(202).json({
+    status: waiting_approval,
+    approval_request: error.approval_request,
+    policy: error.policy
+  });
+
+  return true;
+}
+
 function maybeQueueApprovalTask(req, res, error, operation) {
   if (error?.code !== 'SPEND_APPROVAL_REQUIRED') {
     return false;
@@ -96,6 +111,32 @@ async function listPayments(req, res, next) {
       to: req.query.to
     });
     res.status(200).json({ payments });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getInvoice(req, res, next) {
+  try {
+    const invoiceId = ensureId(req.params.id, 'Invoice');
+    const invoice = financeService.getInvoice(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+    res.status(200).json({ invoice });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getPayment(req, res, next) {
+  try {
+    const paymentId = ensureId(req.params.id, 'Payment');
+    const payment = financeService.getPayment(paymentId);
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+    res.status(200).json({ payment });
   } catch (error) {
     next(error);
   }
@@ -194,7 +235,9 @@ async function reportOpenAr(req, res, next) {
 }
 
 router.get('/invoices', authenticate, requireScopes('finance:read'), listInvoices);
+router.get('/invoices/:id', authenticate, requireScopes('finance:read'), getInvoice);
 router.get('/payments', authenticate, requireScopes('finance:read'), listPayments);
+router.get('/payments/:id', authenticate, requireScopes('finance:read'), getPayment);
 router.get('/journal-entries', authenticate, requireScopes('finance:read'), listJournalEntries);
 router.post('/invoices', authenticate, requireScopes('finance:write'), createInvoice);
 router.post('/payments', authenticate, requireScopes('finance:write'), createPayment);
@@ -205,7 +248,9 @@ router.get('/reports/open-ar', authenticate, requireScopes('finance:read'), repo
 
 router.handlers = {
   listInvoices,
+  getInvoice,
   listPayments,
+  getPayment,
   listJournalEntries,
   createInvoice,
   createPayment,

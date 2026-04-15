@@ -22,6 +22,7 @@ async function createM5Harness() {
   const { migrate } = require('../../db/migrator');
   const { openDatabase, closeDatabase } = require('../../db/client');
   const { financeService } = require('../../modules/finance');
+  const { sepaService, sepaRepository } = require('../../modules/sepa');
   const { verifyChain } = require('../../modules/audit');
   const { agentTaskService } = require('../../modules/agents');
   const financeRoutes = require('../../api/finance.routes');
@@ -37,6 +38,19 @@ async function createM5Harness() {
   function getContactId() {
     const row = db.prepare('SELECT id FROM contacts WHERE contact_no = ? LIMIT 1').get('C-10001');
     return row.id;
+  }
+
+  function createTestContact(contactData = {}) {
+    const { name = 'Test Contact', iban = null, bic = null } = contactData;
+    const contactNo = `C-TEST-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    
+    const stmt = db.prepare(`
+      INSERT INTO contacts (contact_no, type, name, is_active, iban, bic) 
+      VALUES (?, ?, ?, 1, ?, ?)
+    `);
+    
+    const result = stmt.run(contactNo, 'debtor', name, iban, bic);
+    return result.lastInsertRowid;
   }
 
   function insertBrokenTransactionRow() {
@@ -99,55 +113,43 @@ async function createM5Harness() {
     const res = createResponse();
     let nextError = null;
 
+    const next = (error) => {
+      nextError = error;
+    };
+
     try {
-      await handler(req, res, (error) => {
-        nextError = error || null;
-      });
+      await handler(req, res, next);
     } catch (error) {
       nextError = error;
     }
 
-    return {
-      error: nextError,
-      res
-    };
-  }
-
-  async function waitForTask(taskId, targetStatus = 'done', timeoutMs = 2000) {
-    const started = Date.now();
-    while (Date.now() - started < timeoutMs) {
-      const task = agentTaskService.getTask(taskId);
-      if (task && task.status === targetStatus) {
-        return task;
-      }
-      if (task && task.status === 'failed' && targetStatus !== 'failed') {
-        return task;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    if (nextError) {
+      throw nextError;
     }
 
-    throw new Error(`Task ${taskId} did not reach ${targetStatus}`);
-  }
-
-  async function close() {
-    closeDatabase();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    return res;
   }
 
   return {
     db,
     financeService,
+    sepaService,
+    sepaRepository,
+    agentTaskService,
     verifyChain,
-    financeRoutes,
-    agentsRoutes,
-    invoke,
-    waitForTask,
     getContactId,
+    createTestContact,
     insertBrokenTransactionRow,
-    close
+    invoke,
+    close: () => {
+      closeDatabase();
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch (e) {
+        // ignore cleanup errors
+      }
+    }
   };
 }
 
-module.exports = {
-  createM5Harness
-};
+module.exports = { createM5Harness };

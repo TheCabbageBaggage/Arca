@@ -1,9 +1,9 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { openDatabase, closeDatabase } = require('./client');
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { openDatabase, closeDatabase } = require("./client");
 
-const migrationsDir = path.join(__dirname, 'migrations');
+const migrationsDir = path.join(__dirname, "migrations");
 
 function ensureSchemaMigrationsTable(db) {
   db.exec(`
@@ -17,38 +17,56 @@ function ensureSchemaMigrationsTable(db) {
 }
 
 function checksum(content) {
-  return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+  return crypto.createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+function normalizeJsMigration(moduleExport, migration) {
+  if (typeof moduleExport === "function") {
+    return { up: moduleExport };
+  }
+  if (moduleExport && typeof moduleExport.up === "function") {
+    return moduleExport;
+  }
+  throw new Error(`Invalid JS migration format for ${migration.filename}. Expected function or { up(db) }.`);
 }
 
 function readMigrations() {
   return fs.readdirSync(migrationsDir)
-    .filter((file) => file.endsWith('.sql'))
+    .filter((file) => file.endsWith(".sql") || file.endsWith(".js"))
     .sort()
     .map((filename) => {
       const filePath = path.join(migrationsDir, filename);
-      const content = fs.readFileSync(filePath, 'utf8');
+      const content = fs.readFileSync(filePath, "utf8");
+      const kind = filename.endsWith(".sql") ? "sql" : "js";
       return {
         filename,
         path: filePath,
         content,
-        checksum: checksum(content)
+        checksum: checksum(content),
+        kind
       };
     });
 }
 
 function getAppliedMigrations(db) {
   ensureSchemaMigrationsTable(db);
-  const rows = db.prepare('SELECT filename, checksum, applied_at FROM schema_migrations ORDER BY filename').all();
+  const rows = db.prepare("SELECT filename, checksum, applied_at FROM schema_migrations ORDER BY filename").all();
   return new Map(rows.map((row) => [row.filename, row]));
 }
 
 function applyMigration(db, migration) {
   const insert = db.prepare(
-    'INSERT INTO schema_migrations (filename, checksum) VALUES (?, ?)'
+    "INSERT INTO schema_migrations (filename, checksum) VALUES (?, ?)"
   );
 
   const tx = db.transaction(() => {
-    db.exec(migration.content);
+    if (migration.kind === "sql") {
+      db.exec(migration.content);
+    } else {
+      delete require.cache[require.resolve(migration.path)];
+      const jsMigration = normalizeJsMigration(require(migration.path), migration);
+      jsMigration.up(db);
+    }
     insert.run(migration.filename, migration.checksum);
   });
 
@@ -72,13 +90,12 @@ function migrate() {
   });
 
   if (modified.length > 0) {
-    const names = modified.map((migration) => migration.filename).join(', ');
+    const names = modified.map((migration) => migration.filename).join(", ");
     throw new Error(`Applied migration(s) changed on disk: ${names}`);
   }
 
   for (const migration of pending) {
     applyMigration(db, migration);
-    // eslint-disable-next-line no-console
     console.log(`Applied ${migration.filename}`);
   }
 
@@ -99,8 +116,8 @@ function status() {
     filename: migration.filename,
     checksum: migration.checksum,
     status: applied.has(migration.filename)
-      ? (applied.get(migration.filename).checksum === migration.checksum ? 'applied' : 'modified')
-      : 'pending',
+      ? (applied.get(migration.filename).checksum === migration.checksum ? "applied" : "modified")
+      : "pending",
     applied_at: applied.get(migration.filename)?.applied_at || null
   }));
 
@@ -110,7 +127,6 @@ function status() {
 function runMigrateCli() {
   try {
     const result = migrate();
-    // eslint-disable-next-line no-console
     console.log(
       `Done. Applied now: ${result.appliedNow}. Pending after run: ${result.pendingAfterRun}.`
     );
@@ -122,7 +138,6 @@ function runMigrateCli() {
 function runStatusCli() {
   try {
     const migrations = status();
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify(migrations, null, 2));
   } finally {
     closeDatabase();

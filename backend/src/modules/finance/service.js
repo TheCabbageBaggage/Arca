@@ -1,5 +1,6 @@
 const FinanceRepository = require('./repository');
 const { normalizeDate, normalizePeriod, periodFromDate, toNumber } = require('./utils');
+const { approvalsService } = require("../approvals");
 
 function requireField(value, message) {
   if (value === undefined || value === null || String(value).trim() === '') {
@@ -20,6 +21,18 @@ function actorOrSystem(actor) {
 class FinanceService {
   constructor(repository = new FinanceRepository()) {
     this.repository = repository;
+  }
+
+  enforcePolicyApproval(scope, amount, actor, operation, payload = {}) {
+    const actorId = actor?.id ? String(actor.id) : null;
+    approvalsService.ensureApprovedOrThrow({
+      scope,
+      amount: toNumber(amount, 0),
+      cost_center: payload.cost_center || payload.costCenter || null,
+      reference_type: operation,
+      requester_id: actorId,
+      reason: payload.description || null
+    });
   }
 
   enforceSpendApproval(scope, amountUsd, actor, operation) {
@@ -69,19 +82,49 @@ class FinanceService {
     return this.repository.listJournalEntries(filters);
   }
 
-  createInvoice(payload = {}, actor = null) {
+  async createInvoice(payload = {}, actor = null) {
     requireField(payload.contact_id || payload.contactId, 'contact_id is required');
     const contactId = Number(payload.contact_id || payload.contactId);
-    if (!this.repository.contactExists(contactId)) {
+    
+    const contact = this.repository.getContact(contactId);
+    if (!contact) {
       const error = new Error('Contact not found');
       error.statusCode = 404;
       throw error;
     }
 
+    const businessPartnerIdRaw = payload.business_partner_id ?? payload.businessPartnerId;
+    const businessPartnerId = businessPartnerIdRaw ? Number(businessPartnerIdRaw) : null;
+    let businessPartnerName = null;
+    if (businessPartnerId) {
+      const partner = this.repository.getContact(businessPartnerId);
+      if (!partner) {
+        const error = new Error('Business partner not found');
+        error.statusCode = 404;
+        throw error;
+      }
+      businessPartnerName = partner.name || null;
+    }
+
     const issueDate = normalizeDate(payload.issue_date || payload.issueDate || new Date().toISOString());
     const bookingPeriod = normalizePeriod(payload.booking_period || payload.bookingPeriod) || periodFromDate(issueDate);
     const subtotalNet = toNumber(payload.subtotal_net ?? payload.subtotalNet, 0);
-    const taxRate = toNumber(payload.tax_rate ?? payload.taxRate, 0);
+    
+    // Determine reverse charge and VAT rate
+    let reverseCharge = payload.reverse_charge ?? payload.reverseCharge ?? false;
+    let taxRate = toNumber(payload.tax_rate ?? payload.taxRate, 20); // Default 20%
+    
+    // Auto-detect reverse charge for EU customers with valid VAT
+    if (!reverseCharge && contact.vat_valid === 1 && contact.vat_country && contact.vat_country !== 'AT') {
+      // EU customer with valid VAT number → reverse charge applies
+      reverseCharge = true;
+    }
+    
+    // If reverse charge applies, VAT rate is 0
+    if (reverseCharge) {
+      taxRate = 0;
+    }
+    
     const taxAmount = toNumber(payload.tax_amount ?? payload.taxAmount, subtotalNet * (taxRate / 100));
     const totalGross = toNumber(payload.total_gross ?? payload.totalGross, subtotalNet + taxAmount);
     const paidAmount = toNumber(payload.paid_amount ?? payload.paidAmount, 0);
@@ -102,12 +145,25 @@ class FinanceService {
       throw error;
     }
 
+    this.enforcePolicyApproval("invoice", totalGross, actor, "create_invoice", payload);
     this.enforceSpendApproval('finance:write', totalGross, actor, 'create_invoice');
+
+    // Prepare invoice lines with reverse charge note if applicable
+    let lines = Array.isArray(payload.lines) ? payload.lines : [];
+    if (reverseCharge && lines.length > 0) {
+      // Add reverse charge note to description
+      lines = lines.map(line => ({
+        ...line,
+        description: line.description ? `${line.description} (Steuerschuldnerschaft des Leistungsempfängers)` : 'Steuerschuldnerschaft des Leistungsempfängers'
+      }));
+    }
 
     return this.repository.createInvoice({
       invoice_no: payload.invoice_no || payload.invoiceNo,
       invoice_type: payload.invoice_type || payload.invoiceType || 'invoice',
       contact_id: contactId,
+      business_partner_id: businessPartnerId,
+      business_partner_name: businessPartnerName,
       issue_date: issueDate,
       due_date: normalizedDueDate,
       booking_period: bookingPeriod,
@@ -120,13 +176,15 @@ class FinanceService {
       paid_amount: paidAmount,
       balance_amount: balanceAmount,
       description: payload.description || null,
-      lines: Array.isArray(payload.lines) ? payload.lines : [],
+      lines: lines,
       nextcloud_path: payload.nextcloud_path || payload.nextcloudPath || null,
       created_by_type: createdBy.type,
       created_by_id: createdBy.id,
       created_by_name: createdBy.name,
       fx_rate: toNumber(payload.fx_rate ?? payload.fxRate, 1),
-      amount_base_currency: toNumber(payload.amount_base_currency ?? payload.amountBaseCurrency, totalGross)
+      amount_base_currency: toNumber(payload.amount_base_currency ?? payload.amountBaseCurrency, totalGross),
+      reverse_charge: reverseCharge ? 1 : 0,
+      vat_rate: taxRate
     });
   }
 
@@ -138,6 +196,19 @@ class FinanceService {
       const error = new Error('Contact not found');
       error.statusCode = 404;
       throw error;
+    }
+
+    const businessPartnerIdRaw = payload.business_partner_id ?? payload.businessPartnerId;
+    const businessPartnerId = businessPartnerIdRaw ? Number(businessPartnerIdRaw) : null;
+    let businessPartnerName = null;
+    if (businessPartnerId) {
+      const partner = this.repository.getContact(businessPartnerId);
+      if (!partner) {
+        const error = new Error('Business partner not found');
+        error.statusCode = 404;
+        throw error;
+      }
+      businessPartnerName = partner.name || null;
     }
 
     const invoiceId = payload.invoice_id || payload.invoiceId || null;
@@ -152,11 +223,14 @@ class FinanceService {
     const totalAmount = toNumber(payload.total_amount ?? payload.totalAmount ?? payload.amount_gross ?? payload.amountGross ?? payload.amount, 0);
     const createdBy = actorOrSystem(actor);
 
+    this.enforcePolicyApproval("payment", totalAmount, actor, "create_payment", payload);
     this.enforceSpendApproval('finance:write', totalAmount, actor, 'create_payment');
 
     return this.repository.createPayment({
       payment_no: payload.payment_no || payload.paymentNo,
       contact_id: contactId,
+      business_partner_id: businessPartnerId,
+      business_partner_name: businessPartnerName,
       invoice_id: invoiceId,
       payment_date: paymentDate,
       booking_period: bookingPeriod,
@@ -185,6 +259,7 @@ class FinanceService {
       .filter((line) => line && line.side === 'debit')
       .reduce((sum, line) => sum + toNumber(line.amount, 0), 0);
 
+    this.enforcePolicyApproval("journal", totalDebit, actor, "create_journal_entry", payload);
     this.enforceSpendApproval('finance:write', totalDebit, actor, 'create_journal_entry');
 
     return this.repository.createJournalEntry({
@@ -224,6 +299,47 @@ class FinanceService {
 
   reportOpenAr(filters = {}) {
     return this.repository.getOpenAr(filters);
+  }
+
+  /**
+   * Update invoice with reverse charge setting
+   * @param {number} id - Invoice ID
+   * @param {Object} payload - Update payload
+   * @param {Object} actor - Actor information
+   * @returns {Object} Updated invoice
+   */
+  updateInvoice(id, payload = {}, actor = null) {
+    const invoice = this.repository.getInvoiceById(id);
+    if (!invoice) {
+      const error = new Error('Invoice not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Only allow updating reverse_charge and vat_rate fields via this method
+    const allowedFields = ['reverse_charge', 'reverseCharge', 'vat_rate', 'vatRate'];
+    const updatePayload = {};
+    
+    for (const [key, value] of Object.entries(payload)) {
+      if (allowedFields.includes(key)) {
+        const dbField = key === 'reverseCharge' ? 'reverse_charge' : 
+                       key === 'vatRate' ? 'vat_rate' : key;
+        updatePayload[dbField] = value;
+      }
+    }
+
+    if (Object.keys(updatePayload).length === 0) {
+      return invoice;
+    }
+
+    // If reverse charge is being set, adjust VAT rate to 0
+    if (updatePayload.reverse_charge === 1 || updatePayload.reverse_charge === true) {
+      updatePayload.vat_rate = 0;
+      updatePayload.tax_amount = 0;
+      updatePayload.total_gross = invoice.subtotal_net;
+    }
+
+    return this.repository.updateInvoice(id, updatePayload);
   }
 }
 

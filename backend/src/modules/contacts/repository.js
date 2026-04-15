@@ -1,219 +1,147 @@
 const { openDatabase } = require('../../db/client');
-const {
-  basePathForType,
-  normalizeContactType,
-  parseJson,
-  prefixForType,
-  slugify,
-  tableExists,
-  toJson
-} = require('./utils');
-
-function requireContactsTable(db) {
-  if (!tableExists(db, 'contacts')) {
-    const error = new Error('Missing contacts table. Run the contacts migration first.');
-    error.statusCode = 500;
-    throw error;
-  }
-}
 
 class ContactsRepository {
-  ensure() {
-    const db = openDatabase();
-    requireContactsTable(db);
-    return db;
-  }
-
-  mapContact(row) {
-    if (!row) {
-      return null;
-    }
-
-    return {
-      id: row.id,
-      contact_no: row.contact_no,
-      type: row.type,
-      name: row.name,
-      email: row.email,
-      phone: row.phone,
-      address: parseJson(row.address_json, {}),
-      payment_terms: parseJson(row.payment_terms_json, {}),
-      accounting: parseJson(row.accounting_json, {}),
-      tax_id: row.tax_id,
-      nextcloud_path: row.nextcloud_path,
-      is_active: row.is_active === 1,
-      created_at: row.created_at,
-      updated_at: row.updated_at
-    };
+  constructor(db = openDatabase()) {
+    this.db = db;
   }
 
   listContacts(filters = {}) {
-    const db = this.ensure();
-    const clauses = [];
-    const values = [];
+    let query = 'SELECT * FROM contacts WHERE is_active = 1';
+    const params = [];
 
     if (filters.type) {
-      clauses.push('type = ?');
-      values.push(filters.type);
+      query += ' AND type = ?';
+      params.push(filters.type);
     }
 
-    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    const rows = db.prepare(`SELECT * FROM contacts ${where} ORDER BY contact_no ASC, id ASC`).all(...values);
-    return rows.map((row) => this.mapContact(row));
+    query += ' ORDER BY name ASC';
+
+    return this.db.prepare(query).all(...params);
   }
 
   getContactById(id) {
-    const db = this.ensure();
-    const row = db.prepare('SELECT * FROM contacts WHERE id = ? LIMIT 1').get(Number(id));
-    return this.mapContact(row);
+    return this.db
+      .prepare('SELECT * FROM contacts WHERE id = ? AND is_active = 1')
+      .get(id);
   }
 
-  getContactByNo(contactNo) {
-    const db = this.ensure();
-    const row = db.prepare('SELECT * FROM contacts WHERE contact_no = ? LIMIT 1').get(contactNo);
-    return this.mapContact(row);
+  createContact(payload = {}) {
+    const {
+      contact_no,
+      type,
+      name,
+      company,
+      email,
+      phone,
+      address_json = '{}',
+      payment_terms_json = '{}',
+      accounting_json = '{}',
+      tax_id,
+      nextcloud_path,
+      vat_number,
+      vat_country
+    } = payload;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO contacts (
+        contact_no, type, name, company, email, phone,
+        address_json, payment_terms_json, accounting_json,
+        tax_id, nextcloud_path, vat_number, vat_country,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `);
+
+    const result = stmt.run(
+      contact_no,
+      type,
+      name,
+      company,
+      email,
+      phone,
+      typeof address_json === 'string' ? address_json : JSON.stringify(address_json),
+      typeof payment_terms_json === 'string' ? payment_terms_json : JSON.stringify(payment_terms_json),
+      typeof accounting_json === 'string' ? accounting_json : JSON.stringify(accounting_json),
+      tax_id,
+      nextcloud_path,
+      vat_number,
+      vat_country
+    );
+
+    return this.getContactById(result.lastInsertRowid);
   }
 
-  nextContactNo(type, db = this.ensure()) {
-    const prefix = prefixForType(type);
-    const defaultStart = type === 'creditor' ? 20001 : 10001;
-    const row = db
-      .prepare(
-        `SELECT MAX(CAST(substr(contact_no, 3) AS INTEGER)) AS max_number
-         FROM contacts
-         WHERE contact_no LIKE ?`
-      )
-      .get(`${prefix}-%`);
-
-    const nextNumber = Math.max(defaultStart, Number(row?.max_number || 0) + 1);
-    return `${prefix}-${String(nextNumber).padStart(5, '0')}`;
-  }
-
-  buildNextcloudPath(type, contactNo, name) {
-    const folder = basePathForType(type);
-    const safeName = slugify(name) || contactNo.replace('-', '_');
-    return `/ERP-Documents/${folder}/${contactNo}_${safeName}/`;
-  }
-
-  createContact(payload) {
-    const db = this.ensure();
-    const type = normalizeContactType(payload.type);
-
-    if (!type) {
-      const error = new Error('Contact type must be debtor or creditor');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const name = String(payload.name || payload.company_name || '').trim();
-    if (!name) {
-      const error = new Error('Contact name is required');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const contactNo = String(payload.contact_no || payload.contactNo || '').trim() || this.nextContactNo(type, db);
-    const nextcloudPath = String(payload.nextcloud_path || payload.nextcloudPath || '').trim()
-      || this.buildNextcloudPath(type, contactNo, name);
-
-    try {
-      const insert = db.prepare(
-        `INSERT INTO contacts (
-          contact_no, type, name, email, phone, address_json, payment_terms_json,
-          accounting_json, tax_id, nextcloud_path, is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-      );
-
-      const info = insert.run(
-        contactNo,
-        type,
-        name,
-        payload.email || null,
-        payload.phone || null,
-        toJson(payload.address ?? payload.address_json ?? {}),
-        toJson(payload.payment_terms ?? payload.payment_terms_json ?? {}),
-        toJson(payload.accounting ?? payload.accounting_json ?? {}),
-        payload.tax_id || payload.taxId || null,
-        nextcloudPath
-      );
-
-      return this.getContactById(info.lastInsertRowid);
-    } catch (error) {
-      if (String(error.message || '').includes('UNIQUE')) {
-        const conflict = new Error('Contact number already exists');
-        conflict.statusCode = 409;
-        throw conflict;
-      }
-      throw error;
-    }
-  }
-
-  updateContact(id, payload) {
-    const db = this.ensure();
-    const existing = this.getContactById(id);
-
-    if (!existing) {
+  updateContact(id, payload = {}) {
+    const contact = this.getContactById(id);
+    if (!contact) {
       return null;
     }
 
-    const nextType = normalizeContactType(payload.type) || existing.type;
-    if (payload.type !== undefined && !normalizeContactType(payload.type)) {
-      const error = new Error('Contact type must be debtor or creditor');
-      error.statusCode = 400;
-      throw error;
-    }
+    const updates = [];
+    const params = [];
 
-    const nextName = payload.name !== undefined
-      ? String(payload.name || '').trim()
-      : existing.name;
+    // Map payload fields to database columns
+    const fieldMap = {
+      contact_no: 'contact_no',
+      contactNo: 'contact_no',
+      type: 'type',
+      name: 'name',
+      company: 'company',
+      email: 'email',
+      phone: 'phone',
+      address_json: 'address_json',
+      addressJson: 'address_json',
+      payment_terms_json: 'payment_terms_json',
+      paymentTermsJson: 'payment_terms_json',
+      accounting_json: 'accounting_json',
+      accountingJson: 'accounting_json',
+      tax_id: 'tax_id',
+      taxId: 'tax_id',
+      nextcloud_path: 'nextcloud_path',
+      nextcloudPath: 'nextcloud_path',
+      vat_number: 'vat_number',
+      vatNumber: 'vat_number',
+      vat_country: 'vat_country',
+      vatCountry: 'vat_country',
+      vat_valid: 'vat_valid',
+      vatValid: 'vat_valid',
+      vat_validated_at: 'vat_validated_at',
+      vatValidatedAt: 'vat_validated_at',
+      vat_name: 'vat_name',
+      vatName: 'vat_name',
+      is_active: 'is_active',
+      isActive: 'is_active'
+    };
 
-    if (payload.name !== undefined && !nextName) {
-      const error = new Error('Contact name is required');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const nextContactNo = String(payload.contact_no || payload.contactNo || existing.contact_no).trim();
-    const nextcloudPath = payload.nextcloud_path || payload.nextcloudPath || existing.nextcloud_path || this.buildNextcloudPath(nextType, nextContactNo, nextName);
-
-    try {
-      db.prepare(
-        `UPDATE contacts SET
-          contact_no = ?,
-          type = ?,
-          name = ?,
-          email = ?,
-          phone = ?,
-          address_json = ?,
-          payment_terms_json = ?,
-          accounting_json = ?,
-          tax_id = ?,
-          nextcloud_path = ?,
-          updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`
-      ).run(
-        nextContactNo,
-        nextType,
-        nextName,
-        payload.email !== undefined ? payload.email || null : existing.email,
-        payload.phone !== undefined ? payload.phone || null : existing.phone,
-        payload.address !== undefined || payload.address_json !== undefined ? toJson(payload.address ?? payload.address_json ?? {}) : toJson(existing.address),
-        payload.payment_terms !== undefined || payload.payment_terms_json !== undefined ? toJson(payload.payment_terms ?? payload.payment_terms_json ?? {}) : toJson(existing.payment_terms),
-        payload.accounting !== undefined || payload.accounting_json !== undefined ? toJson(payload.accounting ?? payload.accounting_json ?? {}) : toJson(existing.accounting),
-        payload.tax_id !== undefined || payload.taxId !== undefined ? (payload.tax_id || payload.taxId || null) : existing.tax_id,
-        nextcloudPath,
-        Number(id)
-      );
-    } catch (error) {
-      if (String(error.message || '').includes('UNIQUE')) {
-        const conflict = new Error('Contact number already exists');
-        conflict.statusCode = 409;
-        throw conflict;
+    for (const [key, value] of Object.entries(payload)) {
+      const dbField = fieldMap[key];
+      if (dbField && value !== undefined) {
+        // Handle JSON fields
+        if (dbField.includes('_json') && typeof value !== 'string') {
+          updates.push(`${dbField} = ?`);
+          params.push(JSON.stringify(value));
+        } else {
+          updates.push(`${dbField} = ?`);
+          params.push(value);
+        }
       }
-      throw error;
     }
+
+    if (updates.length === 0) {
+      return contact;
+    }
+
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(id);
+
+    const query = `UPDATE contacts SET ${updates.join(', ')} WHERE id = ?`;
+    this.db.prepare(query).run(...params);
 
     return this.getContactById(id);
+  }
+
+  contactExists(id) {
+    const contact = this.getContactById(id);
+    return Boolean(contact);
   }
 }
 

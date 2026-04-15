@@ -21,6 +21,14 @@ function mapInvoice(row) {
     invoice_no: row.invoice_no,
     invoice_type: row.invoice_type,
     contact_id: row.contact_id,
+    business_partner_id: row.business_partner_id,
+    business_partner_name: row.business_partner_name || row.bp_name || null,
+    business_partner: (row.business_partner_id || row.business_partner_name || row.bp_name)
+      ? {
+        id: row.business_partner_id || null,
+        name: row.business_partner_name || row.bp_name || null
+      }
+      : null,
     issue_date: row.issue_date,
     due_date: row.due_date,
     booking_period: row.booking_period,
@@ -28,6 +36,8 @@ function mapInvoice(row) {
     currency: row.currency,
     subtotal_net: row.subtotal_net,
     tax_rate: row.tax_rate,
+    reverse_charge: row.reverse_charge === 1,
+    vat_rate: row.vat_rate,
     tax_amount: row.tax_amount,
     total_gross: row.total_gross,
     paid_amount: row.paid_amount,
@@ -58,6 +68,14 @@ function mapPayment(row) {
     id: row.id,
     payment_no: row.payment_no,
     contact_id: row.contact_id,
+    business_partner_id: row.business_partner_id,
+    business_partner_name: row.business_partner_name || row.bp_name || null,
+    business_partner: (row.business_partner_id || row.business_partner_name || row.bp_name)
+      ? {
+        id: row.business_partner_id || null,
+        name: row.business_partner_name || row.bp_name || null
+      }
+      : null,
     invoice_id: row.invoice_id,
     payment_date: row.payment_date,
     booking_period: row.booking_period,
@@ -119,11 +137,11 @@ class FinanceRepository {
   }
 
   getInvoiceRowById(db, id) {
-    return db.prepare('SELECT * FROM invoices WHERE id = ? LIMIT 1').get(Number(id)) || null;
+    return db.prepare(`SELECT i.*, COALESCE(bp.name, i.business_partner_name) AS bp_name FROM invoices i LEFT JOIN contacts bp ON bp.id = i.business_partner_id WHERE i.id = ? LIMIT 1`).get(Number(id)) || null;
   }
 
   getPaymentRowById(db, id) {
-    return db.prepare('SELECT * FROM payments WHERE id = ? LIMIT 1').get(Number(id)) || null;
+    return db.prepare(`SELECT p.*, COALESCE(bp.name, p.business_partner_name) AS bp_name FROM payments p LEFT JOIN contacts bp ON bp.id = p.business_partner_id WHERE p.id = ? LIMIT 1`).get(Number(id)) || null;
   }
 
   getJournalEntryRowById(db, id) {
@@ -326,18 +344,20 @@ class FinanceRepository {
 
       const insert = db.prepare(
         `INSERT INTO invoices (
-          invoice_no, invoice_type, contact_id, issue_date, due_date, booking_period,
+          invoice_no, invoice_type, contact_id, business_partner_id, business_partner_name, issue_date, due_date, booking_period,
           status, currency, subtotal_net, tax_rate, tax_amount, total_gross,
           paid_amount, balance_amount, description, lines_json, nextcloud_path,
           transaction_log_id, system_log_id, is_storno, storno_of_invoice_id,
           created_by_type, created_by_id, created_by_name, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
       );
 
       const info = insert.run(
         invoiceNo,
         record.invoice_type || 'invoice',
         record.contact_id,
+        record.business_partner_id || null,
+        record.business_partner_name || null,
         issueDate,
         dueDate,
         bookingPeriod,
@@ -429,16 +449,18 @@ class FinanceRepository {
 
       const insert = db.prepare(
         `INSERT INTO payments (
-          payment_no, contact_id, invoice_id, payment_date, booking_period, payment_method,
+          payment_no, contact_id, business_partner_id, business_partner_name, invoice_id, payment_date, booking_period, payment_method,
           currency, amount_net, tax_amount, total_amount, description, nextcloud_path,
           transaction_log_id, system_log_id, is_storno, storno_of_payment_id,
           created_by_type, created_by_id, created_by_name, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
       );
 
       const info = insert.run(
         paymentNo,
         record.contact_id,
+        record.business_partner_id || null,
+        record.business_partner_name || null,
         record.invoice_id || null,
         paymentDate,
         bookingPeriod,
@@ -584,7 +606,8 @@ class FinanceRepository {
     }
 
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    const rows = db.prepare(`SELECT * FROM invoices ${where} ORDER BY issue_date DESC, id DESC`).all(...values);
+    const whereSql = where ? where.replace(/\bcontact_id\b/g, 'i.contact_id').replace(/\bstatus\b/g, 'i.status').replace(/\bissue_date\b/g, 'i.issue_date') : '';
+    const rows = db.prepare(`SELECT i.*, COALESCE(bp.name, i.business_partner_name) AS bp_name FROM invoices i LEFT JOIN contacts bp ON bp.id = i.business_partner_id ${whereSql} ORDER BY i.issue_date DESC, i.id DESC`).all(...values);
     return rows.map(mapInvoice);
   }
 
@@ -596,7 +619,7 @@ class FinanceRepository {
 
   getInvoiceByNo(invoiceNo) {
     const db = this.ensure();
-    const row = db.prepare('SELECT * FROM invoices WHERE invoice_no = ? LIMIT 1').get(invoiceNo);
+    const row = db.prepare('SELECT i.*, COALESCE(bp.name, i.business_partner_name) AS bp_name FROM invoices i LEFT JOIN contacts bp ON bp.id = i.business_partner_id WHERE i.invoice_no = ? LIMIT 1').get(invoiceNo);
     return mapInvoice(row);
   }
 
@@ -623,7 +646,8 @@ class FinanceRepository {
     }
 
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    const rows = db.prepare(`SELECT * FROM payments ${where} ORDER BY payment_date DESC, id DESC`).all(...values);
+    const whereSql = where ? where.replace(/\binvoice_id\b/g, 'p.invoice_id') : '';
+    const rows = db.prepare(`SELECT p.*, COALESCE(bp.name, p.business_partner_name) AS bp_name FROM payments p LEFT JOIN contacts bp ON bp.id = p.business_partner_id ${whereSql} ORDER BY p.payment_date DESC, p.id DESC`).all(...values);
     return rows.map(mapPayment);
   }
 
